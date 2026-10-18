@@ -47,7 +47,7 @@ jobs:
         run: >
           xcodebuild -scheme Erup
           -destination 'platform=iOS Simulator,name=iPhone 17' test
-          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
 
       - name: Build unsigned IPA
         run: |
