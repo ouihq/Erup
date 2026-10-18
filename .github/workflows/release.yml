@@ -69,10 +69,13 @@ jobs:
           name: Erup.ipa
           path: build/Erup.ipa
 
+      - name: Create checksum
+        run: (cd build && shasum -a 256 Erup.ipa > Erup.ipa.sha256)
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" build/Erup.ipa --title "Erup ${GITHUB_REF_NAME#v}" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" build/Erup.ipa build/Erup.ipa.sha256 --title "Erup ${GITHUB_REF_NAME#v}" --generate-notes
 
       - name: Commit source.json to main
         run: |
