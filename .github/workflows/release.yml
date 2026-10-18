@@ -16,11 +16,18 @@ jobs:
   release:
     name: Test, build and publish
     if: github.actor == 'ouihq'
+    # Needs approval from the required reviewer set on this environment (Settings > Environments).
+    environment: release
     runs-on: ${{ vars.RUNNER_IMAGE || 'macos-26' }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Check tag is on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "$GITHUB_REF_NAME is not on main" >&2; exit 1; }
 
       - name: Check tag matches project version
         run: |
