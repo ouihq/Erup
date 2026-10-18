@@ -19,7 +19,11 @@
       "iconURL": "https://raw.githubusercontent.com/ouihq/Erup/main/App/Erup/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
       "tintColor": "#0A84FF",
       "category": "utilities",
-      "screenshots": [],
+      "screenshots": [
+        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/dashboard.png",
+        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/rides.png",
+        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/battery.png"
+      ],
       "version": "1.2.0",
       "versionDate": "2026-10-18",
       "versionDescription": "ci: ad-hoc sign test builds so Keychain tests pass",
