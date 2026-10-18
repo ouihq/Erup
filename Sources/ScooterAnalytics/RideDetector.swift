@@ -113,6 +113,13 @@ public struct RideDetector: Sendable {
         return events
     }
 
+    /// The ride so far, without ending it. Nil while no ride is in progress or while it is still too short
+    /// to be kept. The app stores this while riding, so a ride survives the app being killed.
+    public func currentSummary() -> RideSummary? {
+        guard let current = accumulator, case .ended(let summary) = close(current, endingAt: current.last.date) else { return nil }
+        return summary
+    }
+
     /// Ends a ride in progress, for example after a long disconnect.
     public mutating func finish() -> [Event] {
         pending.removeAll()

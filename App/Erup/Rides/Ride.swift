@@ -70,21 +70,26 @@ final class Ride {
         )
     }
 
+    /// Replaces everything stored for this ride with `summary` and `track`.
+    func overwrite(with summary: RideSummary, track: [TrackPoint]) throws {
+        startedAt = summary.startedAt
+        endedAt = summary.endedAt
+        distanceKm = summary.distanceKm
+        averageSpeedKmh = summary.averageSpeedKmh
+        maxSpeedKmh = summary.maxSpeedKmh
+        energyWh = summary.energyWh
+        batteryStart = summary.batteryStart
+        batteryEnd = summary.batteryEnd
+        maxControllerTemperature = summary.maxControllerTemperature
+        maxMotorTemperature = summary.maxMotorTemperature
+        internalResistanceOhm = summary.internalResistanceOhm
+        samplesData = try PackedData.pack(summary.samples)
+        trackData = track.isEmpty ? nil : try PackedData.pack(track)
+    }
+
     /// Replaces this ride with the combination of itself and a ride that followed it closely.
     func absorb(_ next: RideSummary, track nextTrack: [TrackPoint]) throws {
-        let merged = next.merged(after: try summary())
-        let combinedTrack = try decodedTrack() + nextTrack
-        endedAt = merged.endedAt
-        distanceKm = merged.distanceKm
-        averageSpeedKmh = merged.averageSpeedKmh
-        maxSpeedKmh = merged.maxSpeedKmh
-        energyWh = merged.energyWh
-        batteryEnd = merged.batteryEnd
-        maxControllerTemperature = merged.maxControllerTemperature
-        maxMotorTemperature = merged.maxMotorTemperature
-        internalResistanceOhm = merged.internalResistanceOhm
-        samplesData = try PackedData.pack(merged.samples)
-        trackData = combinedTrack.isEmpty ? nil : try PackedData.pack(combinedTrack)
+        try overwrite(with: next.merged(after: try summary()), track: try decodedTrack() + nextTrack)
     }
 
     var duration: TimeInterval { endedAt.timeIntervalSince(startedAt) }

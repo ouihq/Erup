@@ -115,3 +115,83 @@ final class RideMergeStorageTests: XCTestCase {
         XCTAssertEqual(try ride.decodedTrack().count, 2)
     }
 }
+
+import SwiftData
+
+@MainActor
+final class RideRecorderPersistenceTests: XCTestCase {
+    private let origin = Date(timeIntervalSinceReferenceDate: 5_000_000)
+
+    private func makeRecorder() throws -> (RideRecorder, ModelContainer) {
+        let container = try ModelContainer(
+            for: Ride.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let store = ScooterStore(link: MockScooter(behavior: .init(simulatesRide: false, startsPaired: false)))
+        return (RideRecorder(store: store, container: container), container)
+    }
+
+    private func sample(_ seconds: TimeInterval, speed: Double) -> TelemetrySample {
+        TelemetrySample(date: origin.addingTimeInterval(seconds), speedKmh: speed, voltage: 41, current: speed > 0 ? 5 : 0,
+                        batteryPercent: 80, controllerTemperature: 30, motorTemperature: 35)
+    }
+
+    private func rides(_ container: ModelContainer) throws -> [Ride] {
+        try container.mainContext.fetch(FetchDescriptor<Ride>(sortBy: [SortDescriptor(\.startedAt)]))
+    }
+
+    func testARideIsStoredWhileItIsStillInProgress() throws {
+        let (recorder, container) = try makeRecorder()
+        // 60 seconds of riding at 20 km/h and then nothing more: the app is killed here.
+        for t in 0..<60 { recorder.ingest(sample(TimeInterval(t), speed: 20)) }
+
+        let stored = try rides(container)
+        XCTAssertEqual(stored.count, 1, "the ride must exist before it has ended")
+        XCTAssertGreaterThan(stored[0].distanceKm, 0.1)
+        XCTAssertGreaterThan(stored[0].duration, 30)
+    }
+
+    func testTheStoredRideKeepsGrowingAndEndsAsOneRide() throws {
+        let (recorder, container) = try makeRecorder()
+        for t in 0..<60 { recorder.ingest(sample(TimeInterval(t), speed: 20)) }
+        let midway = try rides(container)[0].distanceKm
+        for t in 60..<120 { recorder.ingest(sample(TimeInterval(t), speed: 20)) }
+        // Standing still ends the ride after the stationary timeout.
+        for t in 120..<260 { recorder.ingest(sample(TimeInterval(t), speed: 0)) }
+
+        let stored = try rides(container)
+        XCTAssertEqual(stored.count, 1)
+        XCTAssertGreaterThan(stored[0].distanceKm, midway)
+        XCTAssertEqual(stored[0].duration, 120, accuracy: 3, "the standing time at the end is not part of the ride")
+    }
+
+    func testARideThatRestartsShortlyAfterwardsContinuesTheStoredRide() throws {
+        let (recorder, container) = try makeRecorder()
+        for t in 0..<60 { recorder.ingest(sample(TimeInterval(t), speed: 20)) }
+        for t in 60..<200 { recorder.ingest(sample(TimeInterval(t), speed: 0)) }
+        let firstDistance = try rides(container)[0].distanceKm
+        // The rider continues about a minute later.
+        for t in 260..<330 { recorder.ingest(sample(TimeInterval(t), speed: 20)) }
+
+        let stored = try rides(container)
+        XCTAssertEqual(stored.count, 1, "a short stop must not split the ride")
+        XCTAssertGreaterThan(stored[0].distanceKm, firstDistance)
+    }
+
+    func testRidesFarApartStayApart() throws {
+        let (recorder, container) = try makeRecorder()
+        for t in 0..<60 { recorder.ingest(sample(TimeInterval(t), speed: 20)) }
+        for t in 60..<200 { recorder.ingest(sample(TimeInterval(t), speed: 0)) }
+        for t in 1_000..<1_060 { recorder.ingest(sample(TimeInterval(t), speed: 20)) }
+
+        XCTAssertEqual(try rides(container).count, 2)
+    }
+
+    func testPersistingOnBackgroundStoresTheRideSoFar() throws {
+        let (recorder, container) = try makeRecorder()
+        for t in 0..<8 { recorder.ingest(sample(TimeInterval(t), speed: 20)) }
+        XCTAssertEqual(try rides(container).count, 0, "too short to keep yet")
+        for t in 8..<25 { recorder.ingest(sample(TimeInterval(t), speed: 20)) }
+        recorder.persistDraftNow()
+        XCTAssertEqual(try rides(container).count, 1)
+    }
+}

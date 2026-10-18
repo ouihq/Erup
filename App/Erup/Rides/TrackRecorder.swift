@@ -11,6 +11,9 @@ final class TrackRecorder {
     private var points: [TrackPoint] = []
     var onError: (@MainActor (String) -> Void)?
 
+    /// The route recorded so far, for storing a ride while it is still in progress.
+    var currentPoints: [TrackPoint] { points }
+
     func start() {
         guard task == nil else { return }
         points = []

@@ -114,6 +114,8 @@ final class ScooterStore {
     @ObservationIgnored private var alertTask: Task<Void, Never>?
     @ObservationIgnored var onSample: (@MainActor (TelemetrySample) -> Void)?
     @ObservationIgnored var onRideContextInvalidated: (@MainActor () -> Void)?
+    /// The app is leaving the foreground. Rides store what they have so far, because iOS may not give the app another turn.
+    @ObservationIgnored var onBackground: (@MainActor () -> Void)?
     @ObservationIgnored var onSnapshot: (@MainActor (ScooterSnapshot) -> Void)?
     @ObservationIgnored private var atInbox: [ATReply] = []
     @ObservationIgnored private var unparsedReplies: [String] = []
@@ -436,6 +438,11 @@ final class ScooterStore {
 
     /// The lock and cruise bits are read once per connection, so after the app was in the background they
     /// can be stale. Read them again when the app comes back, while the scooter stands still.
+    func appLeftForeground() {
+        isInForeground = false
+        onBackground?()
+    }
+
     func refreshAfterForeground() {
         Task { await link.resumeAfterBackground() }
         guard connection.isConnected, let telemetry1 = latestTelemetry1, let telemetry2 else { return }

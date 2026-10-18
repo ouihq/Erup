@@ -8,6 +8,17 @@ final class RideRecorder {
     static let capacityKey = "battery.capacityWh"
     private static let disconnectGrace: Duration = .seconds(300)
     private static let historyLimit = 50
+    /// While riding, the ride is written to storage this often, so a killed or suspended app loses little.
+    private static let draftInterval: TimeInterval = 10
+    private static let draftAttemptInterval: TimeInterval = 2
+
+    /// The stored row that follows the ride in progress. When the ride started shortly after a stored one,
+    /// the row is that earlier ride and `base` is what it held before this ride began.
+    private struct LiveRide {
+        let ride: Ride
+        let base: RideSummary?
+        let baseTrack: [TrackPoint]
+    }
 
     private let store: ScooterStore
     private let context: ModelContext
@@ -15,6 +26,9 @@ final class RideRecorder {
     private var detector = RideDetector()
     private var finishTask: Task<Void, Never>?
     private var wasConnected = false
+    private var live: LiveRide?
+    private var lastDraftWrite = Date.distantPast
+    private var lastDraftAttempt = Date.distantPast
 
     init(store: ScooterStore, container: ModelContainer) {
         self.store = store
@@ -25,6 +39,20 @@ final class RideRecorder {
 
     func ingest(_ sample: TelemetrySample) {
         for event in detector.ingest(sample) { handle(event) }
+        guard detector.isRiding else { return }
+        let sinceAttempt = sample.date.timeIntervalSince(lastDraftAttempt)
+        let sinceWrite = sample.date.timeIntervalSince(lastDraftWrite)
+        // Keep trying every couple of seconds until the ride is long enough to store, then every few seconds.
+        if sinceWrite >= Self.draftInterval && sinceAttempt >= Self.draftAttemptInterval {
+            lastDraftAttempt = sample.date
+            if persistDraft() { lastDraftWrite = sample.date }
+        }
+    }
+
+    /// Stores the ride in progress right now, for example when the app goes to the background.
+    func persistDraftNow() {
+        guard detector.isRiding else { return }
+        if persistDraft() { lastDraftWrite = Date() }
     }
 
     func connectionChanged(_ isConnected: Bool) {
@@ -36,6 +64,7 @@ final class RideRecorder {
             return
         }
         guard detector.isRiding else { return }
+        persistDraftNow()
         finishTask = Task {
             do { try await Task.sleep(for: Self.disconnectGrace) } catch { return }
             for event in self.detector.finish() { self.handle(event) }
@@ -45,29 +74,101 @@ final class RideRecorder {
     private func handle(_ event: RideDetector.Event) {
         switch event {
         case .started:
+            lastDraftWrite = .distantPast
+            lastDraftAttempt = .distantPast
             if UserDefaults.standard.bool(forKey: Self.gpsKey) { track.start() }
         case .ended(let summary):
-            save(summary, track: track.stop())
+            finalize(summary, track: track.stop())
         case .discarded:
             _ = track.stop()
+            discardLive()
         }
     }
 
-    private func save(_ summary: RideSummary, track: [TrackPoint]) {
+    // MARK: Storing a ride while it is in progress
+
+    /// Writes the ride so far into its stored row, creating the row once the ride is long enough to keep.
+    @discardableResult
+    private func persistDraft() -> Bool {
+        guard let current = detector.currentSummary() else { return false }
         do {
-            var latest = FetchDescriptor<Ride>(sortBy: [SortDescriptor(\.endedAt, order: .reverse)])
-            latest.fetchLimit = 1
-            if let previous = try context.fetch(latest).first, summary.shouldMerge(after: try previous.summary()) {
-                try previous.absorb(summary, track: track)
-            } else {
-                context.insert(try Ride.make(from: summary, track: track))
-            }
+            let target = try liveRide(for: current)
+            try write(current, track: track.currentPoints, to: target)
             try context.save()
+            return true
+        } catch {
+            store.report("The ride could not be saved: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func liveRide(for current: RideSummary) throws -> LiveRide {
+        if let live { return live }
+        var latest = FetchDescriptor<Ride>(sortBy: [SortDescriptor(\.endedAt, order: .reverse)])
+        latest.fetchLimit = 1
+        let target: LiveRide
+        if let previous = try context.fetch(latest).first, current.shouldMerge(after: try previous.summary()) {
+            target = LiveRide(ride: previous, base: try previous.summary(), baseTrack: try previous.decodedTrack())
+        } else {
+            let ride = try Ride.make(from: current, track: [])
+            context.insert(ride)
+            target = LiveRide(ride: ride, base: nil, baseTrack: [])
+        }
+        live = target
+        return target
+    }
+
+    private func write(_ summary: RideSummary, track: [TrackPoint], to target: LiveRide) throws {
+        if let base = target.base {
+            try target.ride.overwrite(with: summary.merged(after: base), track: target.baseTrack + track)
+        } else {
+            try target.ride.overwrite(with: summary, track: track)
+        }
+    }
+
+    /// The detector ended the ride: store its final numbers in the row that has followed it, or save it now.
+    private func finalize(_ summary: RideSummary, track points: [TrackPoint]) {
+        defer { live = nil }
+        do {
+            if let live {
+                try write(summary, track: points, to: live)
+                try context.save()
+            } else {
+                try storeFinished(summary, track: points)
+            }
         } catch {
             store.report("The ride could not be saved: \(error.localizedDescription)")
             return
         }
         refreshRideContext()
+    }
+
+    /// The ride turned out too short to keep. Remove what was stored for it and restore an earlier ride it was merged into.
+    private func discardLive() {
+        guard let live else { return }
+        self.live = nil
+        do {
+            if let base = live.base {
+                try live.ride.overwrite(with: base, track: live.baseTrack)
+            } else {
+                context.delete(live.ride)
+            }
+            try context.save()
+        } catch {
+            store.report("The ride could not be saved: \(error.localizedDescription)")
+        }
+        refreshRideContext()
+    }
+
+    private func storeFinished(_ summary: RideSummary, track: [TrackPoint]) throws {
+        var latest = FetchDescriptor<Ride>(sortBy: [SortDescriptor(\.endedAt, order: .reverse)])
+        latest.fetchLimit = 1
+        if let previous = try context.fetch(latest).first, summary.shouldMerge(after: try previous.summary()) {
+            try previous.absorb(summary, track: track)
+        } else {
+            context.insert(try Ride.make(from: summary, track: track))
+        }
+        try context.save()
     }
 
     func refreshRideContext() {

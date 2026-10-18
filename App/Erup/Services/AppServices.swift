@@ -17,6 +17,7 @@ final class AppServices {
         self.store = store
         rides = RideRecorder(store: store, container: container)
         store.onSample = { [weak rides] sample in rides?.ingest(sample) }
+        store.onBackground = { [weak rides] in rides?.persistDraftNow() }
         store.onRideContextInvalidated = { [weak rides] in rides?.refreshRideContext() }
         let report: @MainActor (String) -> Void = { [weak store] message in store?.report(message) }
         snapshots.onError = report
