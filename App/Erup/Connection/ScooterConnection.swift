@@ -100,6 +100,8 @@ actor ScooterConnection: ScooterLink {
     private static let restoreIdentifier = "me.ouihq.erup.central"
     private static let silenceTimeout: Duration = .seconds(5)
     private static let maximumBackoffSeconds = 30
+    private static let bridgeWaitPolls = 20
+    private static let bridgeWatchdogTimeout: Duration = .seconds(15)
 
     private let emitter: AsyncStream<LinkEvent>.Continuation
     private let cbStream: AsyncStream<CBEvent>
@@ -123,6 +125,8 @@ actor ScooterConnection: ScooterLink {
     private var decoder = TelemetryDecoder()
     private var bridgeDecoder = BridgeReplyDecoder()
     private var bridgeActive = false
+    private var bridgeOwner: UUID?
+    private var bridgeWatchdog: Task<Void, Never>?
     private var bridgeBacklog: [BridgeEvent] = []
     private var telemetryFrameCount = 0
     private var lastKeepAlive: ContinuousClock.Instant?
@@ -197,30 +201,20 @@ actor ScooterConnection: ScooterLink {
     }
 
     func readControllerInfo() async throws -> ControllerReadout {
-        guard sessionActive else { throw LinkFailure.notConnected }
-        guard !bridgeActive else { throw LinkFailure.busy }
-        bridgeActive = true
-        bridgeDecoder.reset()
-        bridgeBacklog.removeAll()
-        sendNow(SessionFrames.enterBridge)
+        let owner = try await beginBridge()
         do {
             try await Task.sleep(for: .milliseconds(200))
             let readout = try await collectReadout()
-            leaveBridge()
+            leaveBridge(owner: owner)
             return readout
         } catch {
-            leaveBridge()
+            leaveBridge(owner: owner)
             throw error
         }
     }
 
     func lockControlWord(setLockBit set: Bool?) async throws -> UInt16 {
-        guard sessionActive else { throw LinkFailure.notConnected }
-        guard !bridgeActive else { throw LinkFailure.busy }
-        bridgeActive = true
-        bridgeDecoder.reset()
-        bridgeBacklog.removeAll()
-        sendNow(SessionFrames.enterBridge)
+        let owner = try await beginBridge()
         do {
             try await Task.sleep(for: .milliseconds(200))
             var word = try await readControlWord()
@@ -232,10 +226,10 @@ actor ScooterConnection: ScooterLink {
                 try await Task.sleep(for: .milliseconds(250))
                 word = try await readControlWord()
             }
-            leaveBridge()
+            leaveBridge(owner: owner)
             return word
         } catch {
-            leaveBridge()
+            leaveBridge(owner: owner)
             throw error
         }
     }
@@ -307,13 +301,48 @@ actor ScooterConnection: ScooterLink {
         throw LinkFailure.timeout
     }
 
-    private func leaveBridge() {
+    /// Bridge mode swallows telemetry and pauses the keep-alive, so only one exchange may run at a time. A
+    /// short wait covers an exchange that is about to finish; a stale one is cleared by its watchdog.
+    private func beginBridge() async throws -> UUID {
+        guard sessionActive else { throw LinkFailure.notConnected }
+        for _ in 0..<Self.bridgeWaitPolls where bridgeActive {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard sessionActive else { throw LinkFailure.notConnected }
+        guard !bridgeActive else { throw LinkFailure.busy }
+        let owner = UUID()
+        bridgeOwner = owner
+        bridgeActive = true
+        bridgeDecoder.reset()
+        bridgeBacklog.removeAll()
+        // iOS can suspend the app in the middle of an exchange. Without this the bridge would stay open after
+        // it resumes: telemetry stays swallowed and every later lock or control write fails as busy.
+        bridgeWatchdog?.cancel()
+        bridgeWatchdog = Task {
+            do { try await Task.sleep(for: Self.bridgeWatchdogTimeout) } catch { return }
+            self.leaveBridge(owner: owner)
+        }
+        sendNow(SessionFrames.enterBridge)
+        return owner
+    }
+
+    /// Only the exchange that opened the bridge (or its watchdog) may close it, so a late finisher cannot
+    /// close a newer exchange.
+    private func leaveBridge(owner: UUID? = nil) {
         guard bridgeActive else { return }
+        if let owner, owner != bridgeOwner { return }
+        bridgeWatchdog?.cancel()
+        bridgeWatchdog = nil
+        bridgeOwner = nil
         bridgeActive = false
         bridgeBacklog.removeAll()
         bridgeDecoder.reset()
         decoder.reset()
-        if sessionActive { sendNow(SessionFrames.leaveBridge) }
+        if sessionActive {
+            sendNow(SessionFrames.leaveBridge)
+            // The keep-alive was paused while the bridge was open. Resume it at once so the scooter keeps streaming.
+            sendKeepAlive()
+        }
     }
 
     private func sendNow(_ bytes: [UInt8]) {
@@ -560,6 +589,9 @@ actor ScooterConnection: ScooterLink {
         decoder.reset()
         sessionActive = false
         receivedTelemetry = false
+        bridgeWatchdog?.cancel()
+        bridgeWatchdog = nil
+        bridgeOwner = nil
         bridgeActive = false
         bridgeBacklog.removeAll()
         bridgeDecoder.reset()
