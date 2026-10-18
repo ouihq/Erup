@@ -330,7 +330,7 @@ struct AlertBanner: View {
 
     var body: some View {
         if let message = store.alertMessage {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.secondary)
                 Text(message)
                     .font(.footnote.weight(.medium))
