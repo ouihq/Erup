@@ -103,6 +103,11 @@ actor ScooterConnection: ScooterLink {
     private static let bridgeWaitPolls = 20
     private static let bridgeWatchdogTimeout: Duration = .seconds(15)
     private static let bridgeStaleAfter: Duration = .seconds(10)
+    /// When frames arrive but no keep-alive went out for this long, send one now. The count-based rule and the
+    /// timer can both be late while iOS has the app suspended; an arriving frame is the one thing that wakes it.
+    private static let keepAliveSafetyInterval: Duration = .seconds(1)
+    private static let healthLogInterval: Duration = .seconds(15)
+    private static let log = DiagnosticLog.shared
 
     private let emitter: AsyncStream<LinkEvent>.Continuation
     private let cbStream: AsyncStream<CBEvent>
@@ -132,6 +137,9 @@ actor ScooterConnection: ScooterLink {
     private var lastFrameAt: ContinuousClock.Instant?
     private var lastStallAction: ContinuousClock.Instant?
     private var stallPolicy = StreamStallPolicy()
+    private var framesInWindow = 0
+    private var keepAlivesInWindow = 0
+    private var lastHealthLog = ContinuousClock.now
     private var bridgeBacklog: [BridgeEvent] = []
     private var telemetryFrameCount = 0
     private var lastKeepAlive: ContinuousClock.Instant?
@@ -154,6 +162,7 @@ actor ScooterConnection: ScooterLink {
 
     func start() {
         guard central == nil else { return }
+        Self.log.log(.connection, "Bluetooth started (paired scooter: \(pairing.peripheralID == nil ? "none" : "saved"))")
         central = CBCentralManager(
             delegate: delegate,
             queue: DispatchQueue(label: "me.ouihq.erup.central"),
@@ -314,7 +323,11 @@ actor ScooterConnection: ScooterLink {
             try await Task.sleep(for: .milliseconds(50))
         }
         guard sessionActive else { throw LinkFailure.notConnected }
-        guard let owner = bridgeLease.acquire() else { throw LinkFailure.busy }
+        guard let owner = bridgeLease.acquire() else {
+            Self.log.log(.bridge, "bridge exchange refused: another one is still open")
+            throw LinkFailure.busy
+        }
+        Self.log.log(.bridge, "bridge exchange opened (telemetry pauses while it is open)")
         bridgeStartedAt = .now
         bridgeDecoder.reset()
         bridgeBacklog.removeAll()
@@ -332,7 +345,12 @@ actor ScooterConnection: ScooterLink {
     /// Only the exchange that opened the bridge (or its watchdog) may close it, so a late finisher cannot
     /// close a newer exchange.
     private func leaveBridge(owner: UUID? = nil) {
-        guard bridgeLease.release(owner: owner) else { return }
+        guard bridgeLease.release(owner: owner) else {
+            Self.log.log(.bridge, "a late bridge exchange tried to close a newer one, ignored")
+            return
+        }
+        let open = bridgeStartedAt.map { Self.seconds(ContinuousClock.now - $0) } ?? "?"
+        Self.log.log(.bridge, "bridge exchange closed after \(open) s")
         bridgeStartedAt = nil
         bridgeWatchdog?.cancel()
         bridgeWatchdog = nil
@@ -364,20 +382,25 @@ actor ScooterConnection: ScooterLink {
         case .stateChanged(let managerState):
             handleManagerState(managerState)
         case .willRestore(let peripherals):
+            Self.log.log(.connection, "iOS restored the Bluetooth session (\(peripherals.count) peripheral(s)): the app was relaunched or woken for it")
             restored = peripherals
         case .discovered(let found, let name, let rssi):
             handleDiscovered(found, name: name, rssi: rssi)
         case .connected(let connected):
             guard connected.identifier == peripheral?.identifier else { return }
+            Self.log.log(.connection, "link established, discovering services")
             setState(.connecting)
             beginDiscovery(on: connected)
         case .failedToConnect(let failed, let error):
             guard failed.identifier == peripheral?.identifier else { return }
+            Self.log.log(.connection, "connection attempt failed: \(Self.describe(error))")
             emitter.yield(.failure(.bluetooth(error?.localizedDescription ?? "Could not connect to the scooter.")))
             setState(.searching(Self.hint(for: error)))
             scheduleReconnect()
         case .disconnected(let lost, let error):
             guard lost.identifier == peripheral?.identifier else { return }
+            let quiet = lastFrameAt.map { "\(Self.seconds(ContinuousClock.now - $0)) s since the last frame" } ?? "no frame received"
+            Self.log.log(.connection, "link lost: \(Self.describe(error)); \(quiet); bridge \(bridgeActive ? "open" : "closed")")
             endSession()
             setState(.searching(Self.hint(for: error)))
             // Ask for the connection right now. A pending connect never times out and keeps working while the
@@ -407,6 +430,7 @@ actor ScooterConnection: ScooterLink {
     }
 
     private func handleManagerState(_ managerState: CBManagerState) {
+        Self.log.log(.connection, "bluetooth manager state: \(Self.name(of: managerState))")
         switch managerState {
         case .poweredOn:
             if wantsScan { startScanIfPossible() }
@@ -515,6 +539,7 @@ actor ScooterConnection: ScooterLink {
     private func requestConnectionNow() {
         guard let target = peripheral, target.state == .disconnected,
               central?.state == .poweredOn else { return }
+        Self.log.log(.connection, "requesting connection (stays pending until the scooter is reachable)")
         central?.connect(target, options: nil)
     }
 
@@ -578,6 +603,7 @@ actor ScooterConnection: ScooterLink {
             return
         }
         sessionActive = true
+        Self.log.log(.stream, "session started: notifications on, start frame sent")
         receivedTelemetry = false
         telemetryFrameCount = 0
         lastKeepAlive = nil
@@ -592,6 +618,7 @@ actor ScooterConnection: ScooterLink {
     }
 
     private func endSession() {
+        if sessionActive { Self.log.log(.stream, "session ended (\(telemetryFrameCount) frames this session)") }
         keepAliveTask?.cancel()
         silenceTask?.cancel()
         keepAliveTask = nil
@@ -623,9 +650,14 @@ actor ScooterConnection: ScooterLink {
             setState(.connected)
         }
         telemetryFrameCount += 1
+        framesInWindow += 1
         if telemetryFrameCount % SessionFrames.telemetryFramesPerKeepAlive == 0 {
             sendKeepAlive()
+        } else if let last = lastKeepAlive, ContinuousClock.now - last >= Self.keepAliveSafetyInterval {
+            Self.log.log(.stream, "keep-alive was \(Self.seconds(ContinuousClock.now - last)) s late, sent on frame arrival")
+            sendKeepAlive()
         }
+        logHealthIfDue()
     }
 
     private func runKeepAlive() async {
@@ -649,17 +681,22 @@ actor ScooterConnection: ScooterLink {
             return
         }
         let silentFor = now - lastFrameAt
-        if stallPolicy.showsAsSilent(silentFor: silentFor), state == .connected { setState(.searching(.silent)) }
+        if stallPolicy.showsAsSilent(silentFor: silentFor), state == .connected {
+            Self.log.log(.stream, "no frames for \(Self.seconds(silentFor)) s, showing the link as lost")
+            setState(.searching(.silent))
+        }
         switch stallPolicy.evaluate(silentFor: silentFor, sinceLastAction: lastStallAction.map { now - $0 }) {
         case .none:
             return
         case .restartSession:
             lastStallAction = now
+            Self.log.log(.stream, "stream stalled for \(Self.seconds(silentFor)) s, restarting it (attempt \(stallPolicy.attempts))")
             sendNow(SessionFrames.start)
             lastKeepAlive = nil
             sendKeepAlive()
         case .reconnect:
             lastStallAction = now
+            Self.log.log(.stream, "stream still stalled after \(Self.seconds(silentFor)) s, dropping the link to reconnect")
             if let peripheral { central?.cancelPeripheralConnection(peripheral) }
         }
     }
@@ -671,9 +708,19 @@ actor ScooterConnection: ScooterLink {
         checkForStall()
     }
 
+    private func logHealthIfDue() {
+        let now = ContinuousClock.now
+        guard now - lastHealthLog >= Self.healthLogInterval else { return }
+        Self.log.log(.stream, "stream ok: \(framesInWindow) frames, \(keepAlivesInWindow) keep-alives in \(Self.seconds(now - lastHealthLog)) s")
+        lastHealthLog = now
+        framesInWindow = 0
+        keepAlivesInWindow = 0
+    }
+
     private func sendKeepAlive() {
         guard sessionActive, !bridgeActive else { return }
         lastKeepAlive = ContinuousClock.now
+        keepAlivesInWindow += 1
         writeQueue.enqueue(.init(channel: .data, bytes: SessionFrames.keepAlive, isKeepAlive: true))
         flushWrites()
     }
@@ -701,7 +748,47 @@ actor ScooterConnection: ScooterLink {
 
     private func setState(_ newState: ConnectionState) {
         guard newState != state else { return }
+        Self.log.log(.connection, "state \(state) -> \(newState)")
         state = newState
         emitter.yield(.state(newState))
+    }
+
+    // MARK: Log text
+
+    private static func seconds(_ duration: Duration) -> String {
+        let parts = duration.components
+        return String(format: "%.1f", Double(parts.seconds) + Double(parts.attoseconds) / 1e18)
+    }
+
+    private static func name(of state: CBManagerState) -> String {
+        switch state {
+        case .unknown: "unknown"
+        case .resetting: "resetting"
+        case .unsupported: "unsupported"
+        case .unauthorized: "unauthorized"
+        case .poweredOff: "powered off"
+        case .poweredOn: "powered on"
+        @unknown default: "other"
+        }
+    }
+
+    /// Core Bluetooth says why a link ended. Timeout (6) means the radio link was lost, for example out of range or
+    /// iOS not answering in time; peripheral disconnected (7) means the scooter ended the link itself.
+    private static func describe(_ error: Error?) -> String {
+        guard let error else { return "no error (clean disconnect)" }
+        let ns = error as NSError
+        var name = ""
+        if ns.domain == CBErrorDomain, let code = CBError.Code(rawValue: ns.code) {
+            switch code {
+            case .connectionTimeout: name = " (connection timeout: radio link lost)"
+            case .peripheralDisconnected: name = " (the scooter ended the link)"
+            case .connectionFailed: name = " (connection failed)"
+            case .peerRemovedPairingInformation: name = " (scooter removed pairing info)"
+            case .encryptionTimedOut: name = " (encryption timed out)"
+            case .operationCancelled: name = " (cancelled by the app)"
+            default: break
+            }
+        }
+        return "\(ns.domain) code \(ns.code)\(name): \(ns.localizedDescription)"
     }
 }

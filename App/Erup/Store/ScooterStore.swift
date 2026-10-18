@@ -274,9 +274,11 @@ final class ScooterStore {
     }
 
     private func request(_ change: ControlChange) {
+        DiagnosticLog.shared.log(.command, "requested \(change)")
         do {
             try submit(change)
         } catch {
+            DiagnosticLog.shared.log(.command, "refused \(change): \(error.localizedDescription)")
             present(error.localizedDescription)
         }
     }
@@ -430,6 +432,7 @@ final class ScooterStore {
         Task {
             defer { self.isReadingControlWord = false }
             if let word = try? await self.link.lockControlWord(setLockBit: nil) {
+                DiagnosticLog.shared.log(.command, String(format: "control word read: 0x%04X", word))
                 self.controlWord = word
                 self.publish(force: true)
             }
@@ -439,11 +442,14 @@ final class ScooterStore {
     /// The lock and cruise bits are read once per connection, so after the app was in the background they
     /// can be stale. Read them again when the app comes back, while the scooter stands still.
     func appLeftForeground() {
+        DiagnosticLog.shared.isForeground = false
         isInForeground = false
         onBackground?()
     }
 
     func refreshAfterForeground() {
+        DiagnosticLog.shared.isForeground = true
+        DiagnosticLog.shared.log(.app, "returned to the foreground: connection \(connection), last frame \(lastTelemetryDate.map { String(format: "%.1f s ago", Date().timeIntervalSince($0)) } ?? "never")")
         Task { await link.resumeAfterBackground() }
         guard connection.isConnected, let telemetry1 = latestTelemetry1, let telemetry2 else { return }
         refreshControlWordIfNeeded(speedKmh: telemetry1.speedKmh(scaled: telemetry2.speedScalingFlag), force: true)
@@ -477,6 +483,7 @@ final class ScooterStore {
 
     private func rollback(_ kind: ControlChange.Kind, token: UUID, message: String) {
         guard changeTokens[kind] == token else { return }
+        DiagnosticLog.shared.log(.command, "rolled back \(kind): \(message)")
         changeTokens[kind] = nil
         pendingChanges[kind] = nil
         present(message)
@@ -485,6 +492,7 @@ final class ScooterStore {
     private func confirmPendingChanges(against register: ControllerRegister) -> Bool {
         var confirmedAny = false
         for (kind, change) in pendingChanges where kind != .lockFlag && kind != .cruiseControl && change.isReflected(in: register) {
+            DiagnosticLog.shared.log(.command, "confirmed \(kind) by the scooter")
             pendingChanges[kind] = nil
             changeTokens[kind] = nil
             confirmedAny = true
@@ -646,6 +654,7 @@ final class ScooterStore {
     }
 
     private func present(_ message: String) {
+        DiagnosticLog.shared.log(.error, "shown to the rider: \(message)")
         addNotice(message, kind: .problem)
         alertTask?.cancel()
         alertMessage = message

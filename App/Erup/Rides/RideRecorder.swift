@@ -64,6 +64,7 @@ final class RideRecorder {
             return
         }
         guard detector.isRiding else { return }
+        DiagnosticLog.shared.log(.ride, "connection lost during a ride, stored it and waiting up to 5 min for a reconnect")
         persistDraftNow()
         finishTask = Task {
             do { try await Task.sleep(for: Self.disconnectGrace) } catch { return }
@@ -97,6 +98,7 @@ final class RideRecorder {
             try context.save()
             return true
         } catch {
+            DiagnosticLog.shared.log(.error, "storing the ride failed: \(error.localizedDescription)")
             store.report("The ride could not be saved: \(error.localizedDescription)")
             return false
         }
@@ -109,10 +111,12 @@ final class RideRecorder {
         let target: LiveRide
         if let previous = try context.fetch(latest).first, current.shouldMerge(after: try previous.summary()) {
             target = LiveRide(ride: previous, base: try previous.summary(), baseTrack: try previous.decodedTrack())
+            DiagnosticLog.shared.log(.ride, "ride in progress continues the previous ride (stopped \(Int(current.startedAt.timeIntervalSince(previous.endedAt))) s ago)")
         } else {
             let ride = try Ride.make(from: current, track: [])
             context.insert(ride)
             target = LiveRide(ride: ride, base: nil, baseTrack: [])
+            DiagnosticLog.shared.log(.ride, String(format: "ride stored while riding: %.2f km so far", current.distanceKm))
         }
         live = target
         return target
@@ -128,6 +132,7 @@ final class RideRecorder {
 
     /// The detector ended the ride: store its final numbers in the row that has followed it, or save it now.
     private func finalize(_ summary: RideSummary, track points: [TrackPoint]) {
+        DiagnosticLog.shared.log(.ride, String(format: "ride ended: %.2f km, %d s", summary.distanceKm, Int(summary.duration)))
         defer { live = nil }
         do {
             if let live {
@@ -146,6 +151,7 @@ final class RideRecorder {
     /// The ride turned out too short to keep. Remove what was stored for it and restore an earlier ride it was merged into.
     private func discardLive() {
         guard let live else { return }
+        DiagnosticLog.shared.log(.ride, "ride discarded as too short")
         self.live = nil
         do {
             if let base = live.base {

@@ -26,6 +26,7 @@
 		42DEFD18D04556EDDDFE0A2C /* BatteryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 949CE9368BA6AD51DB936E28 /* BatteryView.swift */; };
 		4E75681A8FFB640A1D274B76 /* RideStatisticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3917FCE84EF9DED06CDF117A /* RideStatisticsTests.swift */; };
 		56597C8F26EB298D394F77E1 /* AlertEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F162772060832E9F74600BB4 /* AlertEngine.swift */; };
+		5772B2C00F10B2BE1D7981B7 /* DiagnosticLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB4FBA2B29C0D0DA2D9D58DC /* DiagnosticLogTests.swift */; };
 		5B923E4FC3413F4313753B8D /* DataSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5669AD8337EF321F5ED0274E /* DataSettingsView.swift */; };
 		5BE56D6BBA87D6D773927C0F /* WidgetFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61AB50697416A2EF19521FD4 /* WidgetFormatting.swift */; };
 		5E8B56FFBF1DA34E951DE094 /* ScooterControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 812E7C4631FD24C85BE14299 /* ScooterControls.swift */; };
@@ -62,6 +63,7 @@
 		ADF323C905AEA9DE929E0261 /* ScooterAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = B89DEF10B0B6A107A20A6F59 /* ScooterAnalytics */; };
 		B511A5E223F9B6324FDDA2DE /* ErupWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD39FC6B2CA50DCDB7FFBBB /* ErupWidgetsBundle.swift */; };
 		B6FEB470E13EAF68ECB76ABE /* Appearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3E17F98EB2679BBAC1260BD /* Appearance.swift */; };
+		C7FD185AC302CF2BC854122F /* DiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7AAD8F7AA42F724227BE9B /* DiagnosticLog.swift */; };
 		C96B3B63E53263BA3B693414 /* MockScooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C57B96E9370D0533AA0320C8 /* MockScooter.swift */; };
 		C9CEB0B765D0F7D9805136DF /* ScooterConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A08322EDDF0C8DA55C82753 /* ScooterConnection.swift */; };
 		CF8E72B1597A965951961C27 /* ServiceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A82E677CE210E3B0B18EE5 /* ServiceSettingsView.swift */; };
@@ -72,6 +74,7 @@
 		E424976283B38311D5E24C80 /* DebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4B263C1F847F9405B7780C /* DebugView.swift */; };
 		E6A3A5962A6A21394FD7BA21 /* DataAndNoticeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 035EA7BDE2A452F16550C1B0 /* DataAndNoticeTests.swift */; };
 		E766C2E4444293EF2C8A2CBA /* ScooterSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26D6969C611AE6A155FEEB9A /* ScooterSettingsView.swift */; };
+		E80EE5A0C867D7FA5701ED89 /* DiagnosticReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2015A6EEA40A545415E1D89A /* DiagnosticReport.swift */; };
 		EA9C7CC198FAEA96868B11E9 /* ScooterProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 21587254BE9451DE7AE00112 /* ScooterProtocol */; };
 		ED1E682614C3A83E0F53EB8B /* ScooterIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A5C8E25901B911EBE0B67AA /* ScooterIntents.swift */; };
 		EDF074C2FEA751322C8401E0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AF35DE55CF682E7BC867D2A /* SettingsView.swift */; };
@@ -123,6 +126,7 @@
 		11D565BE89CF8C7E6BB09CAF /* StreamStallPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamStallPolicy.swift; sourceTree = "<group>"; };
 		1403073A6AAE72D829871C3D /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
 		159ADDC9966C416F08A0AFED /* SnapshotWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotWriter.swift; sourceTree = "<group>"; };
+		2015A6EEA40A545415E1D89A /* DiagnosticReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticReport.swift; sourceTree = "<group>"; };
 		2609982F2FD3403EE9188AC8 /* ConnectionTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionTypes.swift; sourceTree = "<group>"; };
 		262E9B8A9EEBB811339E6BA0 /* ScooterLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterLiveActivity.swift; sourceTree = "<group>"; };
 		26D6969C611AE6A155FEEB9A /* ScooterSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterSettingsView.swift; sourceTree = "<group>"; };
@@ -156,6 +160,7 @@
 		67D009A8BB98A4E130529E56 /* PairingStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingStorage.swift; sourceTree = "<group>"; };
 		682105809C1EAB5773B5AE8C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6AEFD1AAFA11DFD8BDC06013 /* StorageMaintenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageMaintenance.swift; sourceTree = "<group>"; };
+		6B7AAD8F7AA42F724227BE9B /* DiagnosticLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLog.swift; sourceTree = "<group>"; };
 		6F1DEB964C558A20F0622048 /* ScooterSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterSnapshot.swift; sourceTree = "<group>"; };
 		7033D0A2DBD67AC57EE61ABA /* AppReset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReset.swift; sourceTree = "<group>"; };
 		7D235AD8C3F9DF85A3F31D47 /* ScooterCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterCommand.swift; sourceTree = "<group>"; };
@@ -183,6 +188,7 @@
 		C8A41B151AF922ED61F01E49 /* InfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfoView.swift; sourceTree = "<group>"; };
 		C9A5B17CF895755CAE27BEB3 /* RideRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideRecorder.swift; sourceTree = "<group>"; };
 		DAD39FC6B2CA50DCDB7FFBBB /* ErupWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErupWidgetsBundle.swift; sourceTree = "<group>"; };
+		DB4FBA2B29C0D0DA2D9D58DC /* DiagnosticLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLogTests.swift; sourceTree = "<group>"; };
 		DF6AC07B343AD61A87CCBD9C /* ErupWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = ErupWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F162772060832E9F74600BB4 /* AlertEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertEngine.swift; sourceTree = "<group>"; };
 		F281A131C004FC49B37B8274 /* ErupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErupTests.swift; sourceTree = "<group>"; };
@@ -232,6 +238,8 @@
 				7033D0A2DBD67AC57EE61ABA /* AppReset.swift */,
 				F4C9BDD85147F5CCF4F22375 /* AppVersion.swift */,
 				AF5EDBA633EF4C471013C331 /* DataExporter.swift */,
+				6B7AAD8F7AA42F724227BE9B /* DiagnosticLog.swift */,
+				2015A6EEA40A545415E1D89A /* DiagnosticReport.swift */,
 				A1560F2449A2D630D4F3C40D /* FeatureFlags.swift */,
 				44A4F3CD834DCA3E901817F1 /* Formatting.swift */,
 				A74EB9DAFE1AAD4CBA5AD3AF /* PINVault.swift */,
@@ -408,6 +416,7 @@
 			children = (
 				C6A7825A29CE4A7E5A3BBEE3 /* BridgeAndForegroundTests.swift */,
 				035EA7BDE2A452F16550C1B0 /* DataAndNoticeTests.swift */,
+				DB4FBA2B29C0D0DA2D9D58DC /* DiagnosticLogTests.swift */,
 				F281A131C004FC49B37B8274 /* ErupTests.swift */,
 				3917FCE84EF9DED06CDF117A /* RideStatisticsTests.swift */,
 				39669E1FB3FEEC50CC6592FB /* ScooterStoreTests.swift */,
@@ -546,6 +555,7 @@
 			files = (
 				6E7202CB08BACC2883B416E3 /* BridgeAndForegroundTests.swift in Sources */,
 				E6A3A5962A6A21394FD7BA21 /* DataAndNoticeTests.swift in Sources */,
+				5772B2C00F10B2BE1D7981B7 /* DiagnosticLogTests.swift in Sources */,
 				3D678C5CACE0873C44D20948 /* ErupTests.swift in Sources */,
 				4E75681A8FFB640A1D274B76 /* RideStatisticsTests.swift in Sources */,
 				081C837A404F8414112F1285 /* ScooterStoreTests.swift in Sources */,
@@ -572,6 +582,8 @@
 				39BFF297617A17B58CBF911C /* DataExporter.swift in Sources */,
 				5B923E4FC3413F4313753B8D /* DataSettingsView.swift in Sources */,
 				E424976283B38311D5E24C80 /* DebugView.swift in Sources */,
+				C7FD185AC302CF2BC854122F /* DiagnosticLog.swift in Sources */,
+				E80EE5A0C867D7FA5701ED89 /* DiagnosticReport.swift in Sources */,
 				98CA331D53C9A50442F10E75 /* ErupApp.swift in Sources */,
 				8E099B08870A88E09CA3E07F /* ExportView.swift in Sources */,
 				765E467ED37DE38BD85BE595 /* FeatureFlags.swift in Sources */,

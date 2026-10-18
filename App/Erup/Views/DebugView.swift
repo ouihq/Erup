@@ -5,8 +5,13 @@ struct DebugView: View {
     @Environment(ScooterStore.self) private var store
     @AppStorage(FeatureFlags.lockFlagMeansLockedKey) private var lockFlagMeansLocked = false
 
+    @State private var events: [DiagnosticLog.Entry] = []
+    @State private var copied = false
+
     var body: some View {
         List {
+            diagnosticsSection
+
             Section {
                 Toggle("Lock bit set means locked", isOn: $lockFlagMeansLocked)
             } header: {
@@ -75,6 +80,61 @@ struct DebugView: View {
         }
         .navigationTitle("Debug")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var report: DiagnosticReport {
+        DiagnosticReport(
+            header: DiagnosticReport.header(for: store),
+            frames: store.isFrameLoggingEnabled
+                ? store.frameLog.map { "\($0.date.formatted(.iso8601)) \($0.direction.rawValue) \($0.label) \($0.bytes.hexString)" }
+                : []
+        )
+    }
+
+    private var diagnosticsSection: some View {
+        Section {
+            ShareLink(item: report, preview: SharePreview("Erup diagnostics")) {
+                Label("Export diagnostics", systemImage: "square.and.arrow.up")
+            }
+            Button {
+                UIPasteboard.general.string = report.text
+                copied = true
+            } label: {
+                Label(copied ? "Copied" : "Copy to clipboard", systemImage: copied ? "checkmark" : "doc.on.doc")
+            }
+            Button("Clear diagnostics", role: .destructive) {
+                DiagnosticLog.shared.clear()
+                refreshEvents()
+            }
+            if events.isEmpty {
+                Text("Nothing logged yet").foregroundStyle(.secondary)
+            }
+            ForEach(events) { entry in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(entry.category.rawValue) · \(entry.foreground ? "fg" : "bg") · \(entry.date.formatted(.dateTime.hour().minute().second()))")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(entry.category == .error ? .red : .secondary)
+                    Text(entry.message)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
+        } header: {
+            Text("Diagnostics")
+        } footer: {
+            Text("Records connection changes, why a link ended, background transitions and rides, and keeps them after the app is closed. It never includes your PIN or the scooter's name. Send the export when something goes wrong.")
+        }
+        .task {
+            // Refresh while the screen is open, so a reconnect shows up without leaving it.
+            while !Task.isCancelled {
+                refreshEvents()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private func refreshEvents() {
+        events = Array(DiagnosticLog.shared.snapshot.suffix(150).reversed())
     }
 
     private func bitRow(_ title: String, _ value: Bool) -> some View {
