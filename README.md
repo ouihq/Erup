@@ -154,17 +154,19 @@ About 100 tests: CRC and capture vectors, fragmented and corrupted streams, brid
 
 [`source.json`](source.json) follows the [AltStore source format](https://faq.altstore.io/developers/make-a-source) and is read straight from the `main` branch. It lists the app, its permissions (they must match the IPA exactly) and every released version.
 
-**Publishing a new version** (maintainers):
+**Publishing a new version** (maintainers). Releases are built by GitHub Actions when a version tag is pushed:
 
-1. Raise `MARKETING_VERSION` (and `CURRENT_PROJECT_VERSION`) in [`project.yml`](project.yml), then build the unsigned IPA.
-2. Run the script. It reads the version, build number and size from the IPA, so the source cannot disagree with the download:
+1. Raise `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in [`project.yml`](project.yml), run `xcodegen generate`, and push to `main`.
+2. Tag the commit with the same version. The tag message becomes the release notes shown in AltStore:
 
    ```sh
-   scripts/update-source.sh build/Erup-unsigned.ipa "What changed in this version"
+   git tag -a v1.3.0 -m "What changed in this version"
+   git push origin v1.3.0
    ```
 
-3. Create a GitHub release named `v<version>` and attach the file the script prepared, `build/Erup.ipa`, with exactly that name.
-4. Commit `source.json`. AltStore picks the change up the next time they refresh the source.
+3. Approve the run under **Actions → Release**. It checks that the tag is on `main` and matches `project.yml`, runs the tests, builds the unsigned IPA, publishes the GitHub release with `Erup.ipa` and `Erup.ipa.sha256`, and commits the new entry to `source.json` (version, build, size and SHA-256 are read from the IPA by [`scripts/update-source.sh`](scripts/update-source.sh), so the source cannot disagree with the download).
+
+Only the repository owner can create `v*` tags (tag ruleset), and the release job needs approval from the `release` environment. AltStore picks the change up the next time it refreshes the source.
 
 **The badge.** The "Download on AltStore" button at the top links to `https://altstore.io/source/<source URL without https://>?app=<bundle id>`, as described in the [badge instructions](https://faq.altstore.io/developers/download-on-altstore-badge). Its images live in [`docs/badges`](docs/badges). Add `&version=<version>` to link to one specific version.
 
