@@ -24,12 +24,22 @@
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/rides.png",
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/battery.png"
       ],
-      "version": "1.2.0",
+      "version": "1.2.1",
       "versionDate": "2026-10-18",
-      "versionDescription": "ci: ad-hoc sign test builds so Keychain tests pass",
-      "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.2.0/Erup.ipa",
-      "size": 1466183,
+      "versionDescription": "Fix lock and light state recovering after the app was in the background, center the alert banner, add screenshots.",
+      "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.2.1/Erup.ipa",
+      "size": 1466178,
       "versions": [
+        {
+          "version": "1.2.1",
+          "buildVersion": "20261018.3",
+          "date": "2026-10-18",
+          "localizedDescription": "Fix lock and light state recovering after the app was in the background, center the alert banner, add screenshots.",
+          "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.2.1/Erup.ipa",
+          "size": 1466178,
+          "sha256": "e20f05b5949a65aab9bf0aba81ad11a93257902b35f5b9f8c6a64d891158d9b7",
+          "minOSVersion": "18.0"
+        },
         {
           "version": "1.2.0",
           "buildVersion": "20261018.2",
