@@ -380,6 +380,9 @@ actor ScooterConnection: ScooterLink {
             guard lost.identifier == peripheral?.identifier else { return }
             endSession()
             setState(.searching(Self.hint(for: error)))
+            // Ask for the connection right now. A pending connect never times out and keeps working while the
+            // app is suspended; the timer below does not, because a suspended app never gets to run it.
+            requestConnectionNow()
             scheduleReconnect()
         case .discoveredServices(let target, let error):
             guard target.identifier == peripheral?.identifier else { return }
@@ -506,6 +509,10 @@ actor ScooterConnection: ScooterLink {
     }
 
     private func reconnectIfStillNeeded() {
+        requestConnectionNow()
+    }
+
+    private func requestConnectionNow() {
         guard let target = peripheral, target.state == .disconnected,
               central?.state == .poweredOn else { return }
         central?.connect(target, options: nil)
