@@ -62,7 +62,7 @@ struct RideStatisticsCard: View {
         }
     }
 
-    private var tint: Color { metric == .distance ? .accentColor : .primary }
+    private var tint: Color { .accentColor }
     private var unitLabel: String { metric == .distance ? units.distanceLabel : units.speedLabel }
 
     private func selectedBucket(_ stats: RideStatistics) -> StatsBucket? {
