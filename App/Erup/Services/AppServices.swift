@@ -78,6 +78,10 @@ final class AppServices {
                     store.report(error.localizedDescription)
                 }
             }
+        } catch SnapshotStore.StoreError.appGroupUnavailable {
+            // Only the widget extension queues commands through the shared container, and it cannot without
+            // the App Group. The app itself works, so there is nothing to tell the rider on every launch.
+            return
         } catch {
             store.report(error.localizedDescription)
         }

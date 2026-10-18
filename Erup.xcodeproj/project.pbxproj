@@ -31,6 +31,7 @@
 		5E8B56FFBF1DA34E951DE094 /* ScooterControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 812E7C4631FD24C85BE14299 /* ScooterControls.swift */; };
 		620BDD8BC006145AB8E728C9 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6345C9686E83DC8B6F8A147A /* NotificationService.swift */; };
 		6B91FB52D60448F9C522CB8E /* ScooterProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 21E49C95198B6DAE881482B7 /* ScooterProtocol */; };
+		6E7202CB08BACC2883B416E3 /* BridgeAndForegroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6A7825A29CE4A7E5A3BBEE3 /* BridgeAndForegroundTests.swift */; };
 		741253A14519A8CBE61529D1 /* AppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0803EC1E4FBA3039288E9B3 /* AppServices.swift */; };
 		75A09EBC96756F67AA5FB819 /* ScooterSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F1DEB964C558A20F0622048 /* ScooterSnapshot.swift */; };
 		75A8ABA535D29C98421F1B58 /* ScooterCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D235AD8C3F9DF85A3F31D47 /* ScooterCommand.swift */; };
@@ -51,6 +52,7 @@
 		97429D9C94BADEC269F2E5A0 /* LiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C61FF9FC5426E694E04146DD /* LiveActivityController.swift */; };
 		98CA331D53C9A50442F10E75 /* ErupApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27C4B81E0A5D444D5B8F2C13 /* ErupApp.swift */; };
 		99A233F06A37D47F68430B64 /* StorageMaintenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AEFD1AAFA11DFD8BDC06013 /* StorageMaintenance.swift */; };
+		9B83F477DDFD6C1CBD328394 /* BridgeLease.swift in Sources */ = {isa = PBXBuildFile; fileRef = C84334EC58B9CA4B5FE8B2D1 /* BridgeLease.swift */; };
 		9E41044097C06D27BA5921A2 /* ScooterLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262E9B8A9EEBB811339E6BA0 /* ScooterLiveActivity.swift */; };
 		9E48906FE97E7F8F6008567E /* PackedData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B5A26856E7B1AD588FAFD87 /* PackedData.swift */; };
 		A1140F012FC6D1DC5C703BB4 /* ScooterIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A5C8E25901B911EBE0B67AA /* ScooterIntents.swift */; };
@@ -173,7 +175,9 @@
 		C02721160A228B5072ACFE84 /* LiveCharts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveCharts.swift; sourceTree = "<group>"; };
 		C57B96E9370D0533AA0320C8 /* MockScooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockScooter.swift; sourceTree = "<group>"; };
 		C61FF9FC5426E694E04146DD /* LiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityController.swift; sourceTree = "<group>"; };
+		C6A7825A29CE4A7E5A3BBEE3 /* BridgeAndForegroundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeAndForegroundTests.swift; sourceTree = "<group>"; };
 		C6BFE646A2B2D047CEC2E8CF /* SecuritySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecuritySettingsView.swift; sourceTree = "<group>"; };
+		C84334EC58B9CA4B5FE8B2D1 /* BridgeLease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeLease.swift; sourceTree = "<group>"; };
 		C8A41B151AF922ED61F01E49 /* InfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfoView.swift; sourceTree = "<group>"; };
 		C9A5B17CF895755CAE27BEB3 /* RideRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideRecorder.swift; sourceTree = "<group>"; };
 		DAD39FC6B2CA50DCDB7FFBBB /* ErupWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErupWidgetsBundle.swift; sourceTree = "<group>"; };
@@ -296,6 +300,7 @@
 		61809ACD611776A46552B978 /* Connection */ = {
 			isa = PBXGroup;
 			children = (
+				C84334EC58B9CA4B5FE8B2D1 /* BridgeLease.swift */,
 				2609982F2FD3403EE9188AC8 /* ConnectionTypes.swift */,
 				67D009A8BB98A4E130529E56 /* PairingStorage.swift */,
 				4A08322EDDF0C8DA55C82753 /* ScooterConnection.swift */,
@@ -398,6 +403,7 @@
 		FAB0E4B4F1B69E56AEB0F076 /* ErupTests */ = {
 			isa = PBXGroup;
 			children = (
+				C6A7825A29CE4A7E5A3BBEE3 /* BridgeAndForegroundTests.swift */,
 				035EA7BDE2A452F16550C1B0 /* DataAndNoticeTests.swift */,
 				F281A131C004FC49B37B8274 /* ErupTests.swift */,
 				3917FCE84EF9DED06CDF117A /* RideStatisticsTests.swift */,
@@ -535,6 +541,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6E7202CB08BACC2883B416E3 /* BridgeAndForegroundTests.swift in Sources */,
 				E6A3A5962A6A21394FD7BA21 /* DataAndNoticeTests.swift in Sources */,
 				3D678C5CACE0873C44D20948 /* ErupTests.swift in Sources */,
 				4E75681A8FFB640A1D274B76 /* RideStatisticsTests.swift in Sources */,
@@ -555,6 +562,7 @@
 				E0C4A03DA059B1E7E6B40EC7 /* AppVersion.swift in Sources */,
 				B6FEB470E13EAF68ECB76ABE /* Appearance.swift in Sources */,
 				42DEFD18D04556EDDDFE0A2C /* BatteryView.swift in Sources */,
+				9B83F477DDFD6C1CBD328394 /* BridgeLease.swift in Sources */,
 				1AE7F392046878715817670D /* ConnectionBadge.swift in Sources */,
 				EEAB939869031D6C028DA69F /* ConnectionTypes.swift in Sources */,
 				2CE0858044376386926AD38F /* DashboardView.swift in Sources */,

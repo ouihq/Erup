@@ -3,6 +3,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(ScooterStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         // The app is usable without a scooter: rides, battery history and settings stay available.
@@ -33,6 +34,9 @@ struct RootView: View {
         }
         .safeAreaInset(edge: .top) { AlertBanner() }
         .animation(.default, value: store.alertMessage)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { store.refreshAfterForeground() }
+        }
     }
 }
 

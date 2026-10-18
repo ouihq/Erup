@@ -124,8 +124,8 @@ actor ScooterConnection: ScooterLink {
     private var writeQueue = WriteQueue()
     private var decoder = TelemetryDecoder()
     private var bridgeDecoder = BridgeReplyDecoder()
-    private var bridgeActive = false
-    private var bridgeOwner: UUID?
+    private var bridgeLease = BridgeLease()
+    private var bridgeActive: Bool { bridgeLease.isActive }
     private var bridgeWatchdog: Task<Void, Never>?
     private var bridgeBacklog: [BridgeEvent] = []
     private var telemetryFrameCount = 0
@@ -309,10 +309,7 @@ actor ScooterConnection: ScooterLink {
             try await Task.sleep(for: .milliseconds(50))
         }
         guard sessionActive else { throw LinkFailure.notConnected }
-        guard !bridgeActive else { throw LinkFailure.busy }
-        let owner = UUID()
-        bridgeOwner = owner
-        bridgeActive = true
+        guard let owner = bridgeLease.acquire() else { throw LinkFailure.busy }
         bridgeDecoder.reset()
         bridgeBacklog.removeAll()
         // iOS can suspend the app in the middle of an exchange. Without this the bridge would stay open after
@@ -329,12 +326,9 @@ actor ScooterConnection: ScooterLink {
     /// Only the exchange that opened the bridge (or its watchdog) may close it, so a late finisher cannot
     /// close a newer exchange.
     private func leaveBridge(owner: UUID? = nil) {
-        guard bridgeActive else { return }
-        if let owner, owner != bridgeOwner { return }
+        guard bridgeLease.release(owner: owner) else { return }
         bridgeWatchdog?.cancel()
         bridgeWatchdog = nil
-        bridgeOwner = nil
-        bridgeActive = false
         bridgeBacklog.removeAll()
         bridgeDecoder.reset()
         decoder.reset()
@@ -591,8 +585,7 @@ actor ScooterConnection: ScooterLink {
         receivedTelemetry = false
         bridgeWatchdog?.cancel()
         bridgeWatchdog = nil
-        bridgeOwner = nil
-        bridgeActive = false
+        bridgeLease.release()
         bridgeBacklog.removeAll()
         bridgeDecoder.reset()
     }

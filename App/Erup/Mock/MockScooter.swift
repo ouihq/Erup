@@ -33,6 +33,7 @@ actor MockScooter: ScooterLink {
     private var lastSpeedKmh = 0.0
     private var regenAmps = 0.0
     private var atState = ATState()
+    private(set) var controlWordReads = 0
 
     private struct ATState {
         var pinEnabled = false
@@ -100,6 +101,7 @@ actor MockScooter: ScooterLink {
 
     func lockControlWord(setLockBit set: Bool?) async throws -> UInt16 {
         guard loop != nil else { throw LinkFailure.notConnected }
+        controlWordReads += 1
         try await Task.sleep(for: .milliseconds(300))
         let lockBit: UInt16 = 1 << UInt16(ControllerRegister.Bit.lock)
         // Like the real scooter, a write is ignored until the PIN was verified (when one is required).

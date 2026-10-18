@@ -417,11 +417,11 @@ final class ScooterStore {
     }
 
     /// Reads the real lock and cruise state once per connection while the scooter stands still.
-    private func refreshControlWordIfNeeded(speedKmh: Double) {
-        guard controlWord == nil, !isReadingControlWord, controlWordAttempts < 3,
+    private func refreshControlWordIfNeeded(speedKmh: Double, force: Bool = false) {
+        guard force || (controlWord == nil && controlWordAttempts < 3), !isReadingControlWord,
               speedKmh <= ControlFrame.standstillThresholdKmh, pendingChanges.isEmpty else { return }
         isReadingControlWord = true
-        controlWordAttempts += 1
+        if !force { controlWordAttempts += 1 }
         Task {
             defer { self.isReadingControlWord = false }
             if let word = try? await self.link.lockControlWord(setLockBit: nil) {
@@ -429,6 +429,13 @@ final class ScooterStore {
                 self.publish(force: true)
             }
         }
+    }
+
+    /// The lock and cruise bits are read once per connection, so after the app was in the background they
+    /// can be stale. Read them again when the app comes back, while the scooter stands still.
+    func refreshAfterForeground() {
+        guard connection.isConnected, let telemetry1 = latestTelemetry1, let telemetry2 else { return }
+        refreshControlWordIfNeeded(speedKmh: telemetry1.speedKmh(scaled: telemetry2.speedScalingFlag), force: true)
     }
 
     /// Entry point for intents and queued commands. Waits for the link, submits, and waits for the register echo.
