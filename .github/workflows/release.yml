@@ -1,0 +1,77 @@
+name: Release
+
+# Push a tag like v1.3.0 to publish. Only the repo owner may do so: protect the v* tags with a ruleset
+# (Settings > Rules) as the real lock; the actor check below is a second guard.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  XCODE_PATH: ${{ vars.XCODE_PATH || '/Applications/Xcode.app' }}
+
+jobs:
+  release:
+    name: Test, build and publish
+    if: github.actor == 'ouihq'
+    runs-on: ${{ vars.RUNNER_IMAGE || 'macos-26' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check tag matches project version
+        run: |
+          version=$(grep -m1 'MARKETING_VERSION' project.yml | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match MARKETING_VERSION $version in project.yml" >&2
+            exit 1
+          fi
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE_PATH"
+
+      - name: Package tests
+        run: swift test
+
+      - name: App tests
+        run: >
+          xcodebuild -scheme Erup
+          -destination 'platform=iOS Simulator,name=iPhone 17' test
+          CODE_SIGNING_ALLOWED=NO
+
+      - name: Build unsigned IPA
+        run: |
+          xcodebuild archive -scheme Erup -configuration Release -sdk iphoneos \
+            -archivePath build/Erup.xcarchive \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          mkdir -p build/ipa/Payload
+          cp -R build/Erup.xcarchive/Products/Applications/Erup.app build/ipa/Payload/
+          (cd build/ipa && zip -qry ../Erup-unsigned.ipa Payload)
+
+      - name: Update source.json
+        run: |
+          notes=$(git for-each-ref "refs/tags/$GITHUB_REF_NAME" --format='%(contents)')
+          scripts/update-source.sh build/Erup-unsigned.ipa "$notes"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Erup.ipa
+          path: build/Erup.ipa
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" build/Erup.ipa --title "Erup ${GITHUB_REF_NAME#v}" --generate-notes
+
+      - name: Commit source.json to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch main
+          git add source.json
+          git commit -m "chore(source): publish ${GITHUB_REF_NAME}"
+          git push origin main
