@@ -1,12 +1,6 @@
-<div align="center">
-
-<img src="App/Erup/Assets.xcassets/AppIcon.appiconset/AppIcon.png" width="120" height="120" alt="Erup icon">
-
 # Erup
 
-**A fast, native iOS companion for the Pure Flex e-scooter.**
-
-<sub>Why the name? <b>Erup</b> is <b>Pure</b> spelled backwards.</sub>
+**A fast, native iOS companion for the Pure Flex e-scooter: live dashboard, automatic rides, widgets and Live Activity. Pure spelled backwards.**
 
 ![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
 ![iOS 18+](https://img.shields.io/badge/iOS-18%2B-000000?logo=apple&logoColor=white)
@@ -16,30 +10,30 @@
 
 <a href="https://altstore.io/source/raw.githubusercontent.com/ouihq/Erup/main/source.json?app=me.ouihq.erup"><img src="docs/badges/DownloadBadge_light.png" alt="Download on AltStore" width="245" height="78"></a>
 
-<sub><a href="#install">Install</a> · <a href="#features">Features</a> · <a href="#safety">Safety</a> · <a href="#your-data">Your data</a> · <a href="#building-from-source">Build</a> · <a href="#contributing">Contributing</a></sub>
+<sub>Why the name? <b>Erup</b> is <b>Pure</b> spelled backwards.</sub>
 
-</div>
+[Install](#install) · [Features](#features) · [Safety](#safety) · [Your data](#your-data) · [Build](#building-from-source) · [Contributing](#contributing)
 
 Live speed and battery at a glance, rides that log themselves, widgets, a Live Activity and Control Center toggles, all over a Bluetooth link that reconnects on its own. Quick to open, quiet in the background, and fully usable with larger text and VoiceOver.
 
 > [!NOTE]
 > Independent project, not affiliated with Pure Electric. The Bluetooth protocol was reverse-engineered from a real scooter.
 
-## Highlights
+## ✨ Highlights
 
-- **Live dashboard:** speedometer with the gear's limit mark and room above it for downhill speed, regenerative braking, battery, range, gear, light, cruise and lock.
-- **Rides that record themselves:** distance, speeds, energy per kilometre, route on a map, and statistics for the week, month, year or all time.
-- **Works without the scooter:** rides, battery history and settings stay available. Live widgets show as unavailable instead of empty.
-- **Private by design:** no account, no server, no analytics. Your PIN stays in the Keychain on your iPhone.
-- **Your data stays yours:** export any period as CSV, GPX and JSON, or reset the app completely.
+- **Live dashboard:** Speedometer with the gear's limit mark and room above it for downhill speed, regenerative braking, battery, range, gear, light, cruise and lock.
+- **Rides that record themselves:** Distance, speeds, energy per kilometre, route on a map, and statistics for the week, month, year or all time.
+- **Works without the scooter:** Rides, battery history and settings stay available. Live widgets show as unavailable instead of empty.
+- **Private by design:** No account, no server, no analytics. Your PIN stays in the Keychain on your iPhone.
+- **Your data stays yours:** Export any period as CSV, GPX and JSON, or reset the app completely.
 
-## Compatibility
+##  📱 Compatibility
 
 Erup is built and tested for the **Pure Flex**. It may also work with other Pure Electric models and scooters that use the same controller (they advertise as `ZYD_…`), but none of those are tested. Use it on another scooter with caution, and check that every control does what you expect while standing still before you ride.
 
 Requires **iOS 18** or later. **iPhone only.**
 
-## Install
+## 🚀 Install
 
 ### AltStore
 
@@ -66,7 +60,7 @@ Then open **Erup** in the source's list and tap **Get**. You can also download `
 
 Prefer to build it yourself? See [Building from source](#building-from-source).
 
-## Features
+## 🌟 Features
 
 | | |
 |---|---|
@@ -96,7 +90,7 @@ Widgets and controls only read a snapshot in the shared App Group. They never to
 > [!IMPORTANT]
 > The scooter's Bluetooth lock and PIN are not real security: anyone nearby can change the PIN without knowing the old one. Use a physical lock.
 
-## Safety
+## 🔒 Safety
 
 Enforced in code and covered by tests.
 
@@ -106,7 +100,7 @@ Enforced in code and covered by tests.
 - **Standstill only.** Lock and cruise are refused above 1 km/h.
 - **No guessed PINs.** Erup only sends the PIN you saved, because a wrong one makes the scooter drop the connection.
 
-## Your data
+## 📊 Your data
 
 | | |
 |---|---|
@@ -115,7 +109,7 @@ Enforced in code and covered by tests.
 | **Reset** | Settings → Data and storage → Reset Erup deletes every ride, forgets the scooter and removes the PIN and all settings. It asks for Face ID and a confirmation first. |
 | **Notifications** | Problems and alerts are kept in the notification center, where you can remove them one by one or clear them all. |
 
-## Building from source
+## 🛠 Building from source
 
 Needs Xcode 27.1+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
@@ -148,7 +142,7 @@ xcodebuild -scheme Erup -destination 'platform=iOS Simulator,name=iPhone 17' tes
 
 About 100 tests: CRC and capture vectors, fragmented and corrupted streams, bridge and AT replies, the speed-cap rule, ride detection and range, lock and cruise confirmation, optimistic updates and rollback, alerts, statistics, compression and export.
 
-## The AltStore source
+## 🔗 The AltStore source
 
 [`source.json`](source.json) follows the [AltStore source format](https://faq.altstore.io/developers/make-a-source) and is read straight from the `main` branch. It lists the app, its permissions (they must match the IPA exactly) and every released version.
 
@@ -166,7 +160,7 @@ About 100 tests: CRC and capture vectors, fragmented and corrupted streams, brid
 
 **The badge.** The "Download on AltStore" button at the top links to `https://altstore.io/source/<source URL without https://>?app=<bundle id>`, as described in the [badge instructions](https://faq.altstore.io/developers/download-on-altstore-badge). Its images live in [`docs/badges`](docs/badges). Add `&version=<version>` to link to one specific version.
 
-## Architecture
+## 🏗️ Architecture
 
 ```mermaid
 flowchart LR
@@ -216,7 +210,7 @@ project.yml               XcodeGen definition
 source.json               AltStore source
 ```
 
-## Known limitations
+## ⚠️ Known limitations
 
 - "Out of range" versus "switched off" is inferred from the disconnect reason, so it's a hint.
 - iOS only starts a Live Activity from the foreground; a background connection shows it next time Erup opens.
@@ -224,7 +218,7 @@ source.json               AltStore source
 - Temperature thresholds and charge-complete detection are conservative estimates.
 - The regenerative-braking gauge is scaled to about a third of the Flex's peak motor power, which is an estimate.
 
-## Contributing
+## 🤝 Contributing
 
 **Missing a feature or found a bug?** [Open an issue](https://github.com/ouihq/Erup/issues/new). I work on them when I have time. If it involves your scooter's behaviour, a Bluetooth snoop log of the official Pure app doing the same thing helps a lot.
 
@@ -242,6 +236,6 @@ source.json               AltStore source
 
 **Have an idea or a fix?** Pull requests are welcome. Please keep changes within the [safety rules](#safety): speed caps and limits are never changed. Run `swift test` and the app tests before opening one.
 
-## Acknowledgements
+## 🙏 Acknowledgements
 
 [ZydDash](https://github.com/Ennar1991/ZydDash) documents a related Zydtech controller and helped confirm the GATT layout, bridge frames, CRC order and lock bit.
