@@ -22,17 +22,18 @@
       "screenshots": [],
       "version": "1.2.0",
       "versionDate": "2026-10-18",
-      "versionDescription": "Rebuilt Settings in the iOS style, a notification center you can clear, export of rides and sensor data for a period you choose, compressed ride storage, an iPhone-only app, larger-text and VoiceOver support, a clearer not-connected card, regenerative braking on the speedometer and exact lock and cruise confirmation.",
+      "versionDescription": "ci: ad-hoc sign test builds so Keychain tests pass",
       "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.2.0/Erup.ipa",
-      "size": 1960836,
+      "size": 1466183,
       "versions": [
         {
           "version": "1.2.0",
           "buildVersion": "20261018.2",
           "date": "2026-10-18",
-          "localizedDescription": "Rebuilt Settings in the iOS style, a notification center you can clear, export of rides and sensor data for a period you choose, compressed ride storage, an iPhone-only app, larger-text and VoiceOver support, a clearer not-connected card, regenerative braking on the speedometer and exact lock and cruise confirmation.",
+          "localizedDescription": "ci: ad-hoc sign test builds so Keychain tests pass",
           "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.2.0/Erup.ipa",
-          "size": 1960836,
+          "size": 1466183,
+          "sha256": "a0f21e37eed759be966e0da066537fcb8b483fd3df3697a271f176e141c16290",
           "minOSVersion": "18.0"
         }
       ],
