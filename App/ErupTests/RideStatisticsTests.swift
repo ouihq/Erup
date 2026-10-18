@@ -81,3 +81,37 @@ final class RideStatisticsTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(start), 1.0, "four period views over 6000 rides must stay well under a second")
     }
 }
+
+import ScooterAnalytics
+
+final class RideMergeStorageTests: XCTestCase {
+    private func summary(start: TimeInterval, duration: TimeInterval, distance: Double) -> RideSummary {
+        let origin = Date(timeIntervalSinceReferenceDate: 4_000_000)
+        return RideSummary(
+            startedAt: origin.addingTimeInterval(start), endedAt: origin.addingTimeInterval(start + duration),
+            distanceKm: distance, averageSpeedKmh: distance / (duration / 3600), maxSpeedKmh: 20, energyWh: 10,
+            batteryStart: 80, batteryEnd: 78, maxControllerTemperature: 40, maxMotorTemperature: 45,
+            internalResistanceOhm: nil,
+            samples: [RideSample(offset: 0, speedKmh: 10, powerWatts: 50, batteryPercent: 80, voltage: 41),
+                      RideSample(offset: duration, speedKmh: 0, powerWatts: 0, batteryPercent: 78, voltage: 40)]
+        )
+    }
+
+    func testAStoredRideAbsorbsTheOneThatFollowedIt() throws {
+        let first = summary(start: 0, duration: 600, distance: 3)
+        let second = summary(start: 700, duration: 300, distance: 1)
+        let origin = first.startedAt
+        let firstTrack = [TrackPoint(latitude: 1, longitude: 1, timestamp: origin)]
+        let secondTrack = [TrackPoint(latitude: 2, longitude: 2, timestamp: origin.addingTimeInterval(700))]
+
+        let ride = try Ride.make(from: first, track: firstTrack)
+        try ride.absorb(second, track: secondTrack)
+
+        XCTAssertEqual(ride.startedAt, first.startedAt)
+        XCTAssertEqual(ride.endedAt, second.endedAt)
+        XCTAssertEqual(ride.distanceKm, 4, accuracy: 0.0001)
+        XCTAssertEqual(ride.batteryEnd, 78)
+        XCTAssertEqual(try ride.decodedSamples().map(\.offset), [0, 600, 700, 1000])
+        XCTAssertEqual(try ride.decodedTrack().count, 2)
+    }
+}

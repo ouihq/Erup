@@ -6,7 +6,12 @@ public struct RideDetector: Sendable {
         public var startDuration: TimeInterval = 3
         public var stopSpeedKmh = 0.5
         public var stationaryTimeout: TimeInterval = 120
-        public var maximumGap: TimeInterval = 30
+        /// A ride survives a gap in the data this long, for example a lagging link or a cutoff and reconnect.
+        public var maximumGap: TimeInterval = 300
+        /// Gaps longer than this add no distance or energy, so a pause in the data cannot invent kilometres.
+        public var integrationLimit: TimeInterval = 5
+        /// Starting a ride needs steady data, so a long gap resets the start check.
+        public var startGap: TimeInterval = 30
         public var storedSampleInterval: TimeInterval = 1
         public var minimumDistanceKm = 0.05
         public var minimumDuration: TimeInterval = 15
@@ -49,9 +54,9 @@ public struct RideDetector: Sendable {
             )
         }
 
-        mutating func add(_ sample: TelemetrySample, storedInterval: TimeInterval) {
+        mutating func add(_ sample: TelemetrySample, storedInterval: TimeInterval, integrationLimit: TimeInterval) {
             let dt = sample.date.timeIntervalSince(last.date)
-            if dt > 0 {
+            if dt > 0, dt <= integrationLimit {
                 distanceKm += (sample.speedKmh + last.speedKmh) / 2 * dt / 3600
                 energyWh += (sample.powerWatts + last.powerWatts) / 2 * dt / 3600
             }
@@ -87,7 +92,7 @@ public struct RideDetector: Sendable {
                 events.append(close(current, endingAt: current.last.date))
                 accumulator = nil
             } else {
-                current.add(sample, storedInterval: configuration.storedSampleInterval)
+                current.add(sample, storedInterval: configuration.storedSampleInterval, integrationLimit: configuration.integrationLimit)
                 if sample.speedKmh < configuration.stopSpeedKmh {
                     current.stationarySince = current.stationarySince ?? sample.date
                 } else {
@@ -121,7 +126,7 @@ public struct RideDetector: Sendable {
             pending.removeAll()
             return []
         }
-        if let last = pending.last, sample.date.timeIntervalSince(last.date) > configuration.maximumGap {
+        if let last = pending.last, sample.date.timeIntervalSince(last.date) > configuration.startGap {
             pending.removeAll()
         }
         pending.append(sample)
@@ -130,7 +135,7 @@ public struct RideDetector: Sendable {
 
         var started = Accumulator(start: first)
         for later in pending.dropFirst() {
-            started.add(later, storedInterval: configuration.storedSampleInterval)
+            started.add(later, storedInterval: configuration.storedSampleInterval, integrationLimit: configuration.integrationLimit)
         }
         accumulator = started
         pending.removeAll()

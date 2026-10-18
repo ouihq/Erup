@@ -6,7 +6,7 @@ import SwiftData
 final class RideRecorder {
     static let gpsKey = "rides.recordGPS"
     static let capacityKey = "battery.capacityWh"
-    private static let disconnectGrace: Duration = .seconds(60)
+    private static let disconnectGrace: Duration = .seconds(300)
     private static let historyLimit = 50
 
     private let store: ScooterStore
@@ -55,7 +55,13 @@ final class RideRecorder {
 
     private func save(_ summary: RideSummary, track: [TrackPoint]) {
         do {
-            context.insert(try Ride.make(from: summary, track: track))
+            var latest = FetchDescriptor<Ride>(sortBy: [SortDescriptor(\.endedAt, order: .reverse)])
+            latest.fetchLimit = 1
+            if let previous = try context.fetch(latest).first, summary.shouldMerge(after: try previous.summary()) {
+                try previous.absorb(summary, track: track)
+            } else {
+                context.insert(try Ride.make(from: summary, track: track))
+            }
             try context.save()
         } catch {
             store.report("The ride could not be saved: \(error.localizedDescription)")

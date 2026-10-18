@@ -60,6 +60,33 @@ final class Ride {
         )
     }
 
+    /// This stored ride as a summary, so a following ride can be merged into it.
+    func summary() throws -> RideSummary {
+        RideSummary(
+            startedAt: startedAt, endedAt: endedAt, distanceKm: distanceKm, averageSpeedKmh: averageSpeedKmh,
+            maxSpeedKmh: maxSpeedKmh, energyWh: energyWh, batteryStart: batteryStart, batteryEnd: batteryEnd,
+            maxControllerTemperature: maxControllerTemperature, maxMotorTemperature: maxMotorTemperature,
+            internalResistanceOhm: internalResistanceOhm, samples: try decodedSamples()
+        )
+    }
+
+    /// Replaces this ride with the combination of itself and a ride that followed it closely.
+    func absorb(_ next: RideSummary, track nextTrack: [TrackPoint]) throws {
+        let merged = next.merged(after: try summary())
+        let combinedTrack = try decodedTrack() + nextTrack
+        endedAt = merged.endedAt
+        distanceKm = merged.distanceKm
+        averageSpeedKmh = merged.averageSpeedKmh
+        maxSpeedKmh = merged.maxSpeedKmh
+        energyWh = merged.energyWh
+        batteryEnd = merged.batteryEnd
+        maxControllerTemperature = merged.maxControllerTemperature
+        maxMotorTemperature = merged.maxMotorTemperature
+        internalResistanceOhm = merged.internalResistanceOhm
+        samplesData = try PackedData.pack(merged.samples)
+        trackData = combinedTrack.isEmpty ? nil : try PackedData.pack(combinedTrack)
+    }
+
     var duration: TimeInterval { endedAt.timeIntervalSince(startedAt) }
     var batteryUsed: Int { batteryStart - batteryEnd }
     var whPerKm: Double? { distanceKm >= 0.1 ? energyWh / distanceKm : nil }

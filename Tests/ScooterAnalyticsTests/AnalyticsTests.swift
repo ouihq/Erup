@@ -58,10 +58,10 @@ final class RideDetectorTests: XCTestCase {
         XCTAssertFalse(detector.isRiding)
     }
 
-    func testLongGapEndsTheRideAtTheLastSample() {
+    func testGapBeyondFiveMinutesEndsTheRideAtTheLastSample() {
         var detector = RideDetector()
         var samples = (0..<30).map { sample(TimeInterval($0), speed: 20, current: 5) }
-        samples.append(sample(200))
+        samples.append(sample(400))
         let events = run(&detector, samples)
         guard case .ended(let ride) = events.last else { return XCTFail("expected a ride end, got \(events)") }
         XCTAssertEqual(ride.duration, 29, accuracy: 1)
@@ -162,5 +162,101 @@ final class RangeEstimatorTests: XCTestCase {
         let rides = Array(repeating: ride, count: 10) + [old]
         let model = try XCTUnwrap(RangeEstimator.model(rides: rides, manualCapacityWh: 1000))
         XCTAssertEqual(model.whPerKm, 30, accuracy: 1e-9)
+    }
+}
+
+final class RideMergeTests: XCTestCase {
+    private let origin = Date(timeIntervalSinceReferenceDate: 2_000_000)
+
+    private func ride(start: TimeInterval, duration: TimeInterval, distance: Double, maxSpeed: Double = 20,
+                      energy: Double = 5, battery: (Int, Int) = (80, 78), resistance: Double? = nil) -> RideSummary {
+        RideSummary(
+            startedAt: origin.addingTimeInterval(start), endedAt: origin.addingTimeInterval(start + duration),
+            distanceKm: distance, averageSpeedKmh: distance / (duration / 3600), maxSpeedKmh: maxSpeed,
+            energyWh: energy, batteryStart: battery.0, batteryEnd: battery.1,
+            maxControllerTemperature: 40, maxMotorTemperature: 45, internalResistanceOhm: resistance,
+            samples: [
+                RideSample(offset: 0, speedKmh: 10, powerWatts: 100, batteryPercent: battery.0, voltage: 41),
+                RideSample(offset: duration, speedKmh: 0, powerWatts: 0, batteryPercent: battery.1, voltage: 40),
+            ]
+        )
+    }
+
+    func testRidesCloseTogetherAreMergedButNotFarApartOrOverlapping() {
+        let first = ride(start: 0, duration: 600, distance: 3)
+        XCTAssertTrue(ride(start: 600 + 60, duration: 300, distance: 1).shouldMerge(after: first))
+        XCTAssertTrue(ride(start: 600 + RideSummary.mergeGap, duration: 300, distance: 1).shouldMerge(after: first))
+        XCTAssertFalse(ride(start: 600 + RideSummary.mergeGap + 1, duration: 300, distance: 1).shouldMerge(after: first))
+        XCTAssertFalse(ride(start: 500, duration: 300, distance: 1).shouldMerge(after: first), "an overlapping ride is not a follow-up")
+    }
+
+    func testMergedRideAddsUpAndSpansBoth() {
+        let first = ride(start: 0, duration: 600, distance: 3, maxSpeed: 22, energy: 40, battery: (80, 77), resistance: 0.2)
+        let second = ride(start: 720, duration: 300, distance: 1.5, maxSpeed: 25, energy: 20, battery: (77, 75), resistance: 0.4)
+        let merged = second.merged(after: first)
+
+        XCTAssertEqual(merged.startedAt, first.startedAt)
+        XCTAssertEqual(merged.endedAt, second.endedAt)
+        XCTAssertEqual(merged.distanceKm, 4.5, accuracy: 0.0001)
+        XCTAssertEqual(merged.energyWh, 60, accuracy: 0.0001)
+        XCTAssertEqual(merged.maxSpeedKmh, 25)
+        XCTAssertEqual(merged.batteryStart, 80)
+        XCTAssertEqual(merged.batteryEnd, 75)
+        XCTAssertEqual(merged.internalResistanceOhm ?? 0, 0.3, accuracy: 0.0001)
+        // 4.5 km over 900 s of riding, not over the 1020 s including the pause.
+        XCTAssertEqual(merged.averageSpeedKmh, 18, accuracy: 0.0001)
+    }
+
+    func testSecondRidesSamplesAreShiftedOntoTheCombinedTimeline() {
+        let first = ride(start: 0, duration: 600, distance: 3)
+        let second = ride(start: 720, duration: 300, distance: 1)
+        let offsets = second.merged(after: first).samples.map(\.offset)
+        XCTAssertEqual(offsets, [0, 600, 720, 1020])
+    }
+
+    func testMergingKeepsAMissingResistanceFromEitherSide() {
+        let first = ride(start: 0, duration: 600, distance: 3, resistance: nil)
+        let second = ride(start: 700, duration: 300, distance: 1, resistance: 0.25)
+        XCTAssertEqual(second.merged(after: first).internalResistanceOhm, 0.25)
+        XCTAssertNil(ride(start: 700, duration: 300, distance: 1).merged(after: first).internalResistanceOhm)
+    }
+}
+
+final class RideGapTests: XCTestCase {
+    private let origin = Date(timeIntervalSinceReferenceDate: 3_000_000)
+
+    private func riding(_ seconds: TimeInterval) -> TelemetrySample {
+        TelemetrySample(date: origin.addingTimeInterval(seconds), speedKmh: 20, voltage: 41, current: 5,
+                        batteryPercent: 80, controllerTemperature: 30, motorTemperature: 35)
+    }
+
+    private func ride(gap: TimeInterval) -> [RideDetector.Event] {
+        var detector = RideDetector()
+        var events: [RideDetector.Event] = []
+        for t in 0..<40 { events += detector.ingest(riding(TimeInterval(t))) }
+        for t in 0..<40 { events += detector.ingest(riding(40 + gap + TimeInterval(t))) }
+        events += detector.finish()
+        return events
+    }
+
+    func testARideSurvivesACutoffAndReconnect() {
+        let events = ride(gap: 90)
+        let ended = events.compactMap { event -> RideSummary? in
+            if case .ended(let ride) = event { return ride } else { return nil }
+        }
+        XCTAssertEqual(events.filter { if case .started = $0 { return true } else { return false } }.count, 1)
+        XCTAssertEqual(ended.count, 1, "the cutoff must not split the ride")
+    }
+
+    func testAGapAddsNoDistanceOrEnergy() throws {
+        let events = ride(gap: 120)
+        guard case .ended(let summary) = events.last else { return XCTFail("no ride end") }
+        // 80 seconds of data at 20 km/h; the two minute gap adds nothing.
+        XCTAssertEqual(summary.distanceKm, 20.0 / 3600 * 78, accuracy: 0.01)
+    }
+
+    func testAGapLongerThanFiveMinutesStillSplitsTheRide() {
+        let started = ride(gap: 400).filter { if case .started = $0 { return true } else { return false } }
+        XCTAssertEqual(started.count, 2)
     }
 }

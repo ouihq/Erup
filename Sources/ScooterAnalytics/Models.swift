@@ -55,7 +55,63 @@ public struct RideSummary: Equatable, Sendable {
     public let internalResistanceOhm: Double?
     public let samples: [RideSample]
 
+    public init(
+        startedAt: Date, endedAt: Date, distanceKm: Double, averageSpeedKmh: Double, maxSpeedKmh: Double,
+        energyWh: Double, batteryStart: Int, batteryEnd: Int, maxControllerTemperature: Int,
+        maxMotorTemperature: Int, internalResistanceOhm: Double?, samples: [RideSample]
+    ) {
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.distanceKm = distanceKm
+        self.averageSpeedKmh = averageSpeedKmh
+        self.maxSpeedKmh = maxSpeedKmh
+        self.energyWh = energyWh
+        self.batteryStart = batteryStart
+        self.batteryEnd = batteryEnd
+        self.maxControllerTemperature = maxControllerTemperature
+        self.maxMotorTemperature = maxMotorTemperature
+        self.internalResistanceOhm = internalResistanceOhm
+        self.samples = samples
+    }
+
     public var duration: TimeInterval { endedAt.timeIntervalSince(startedAt) }
     public var batteryUsed: Int { batteryStart - batteryEnd }
     public var whPerKm: Double? { distanceKm >= 0.1 ? energyWh / distanceKm : nil }
+
+    /// Rides that start within this long after the previous one ended count as one trip, for example a stop
+    /// at a shop or a traffic light that ended the first ride.
+    public static let mergeGap: TimeInterval = 5 * 60
+
+    /// True when this ride started shortly after `previous` ended.
+    public func shouldMerge(after previous: RideSummary) -> Bool {
+        let gap = startedAt.timeIntervalSince(previous.endedAt)
+        return gap >= 0 && gap <= Self.mergeGap
+    }
+
+    /// One ride from `previous` followed by this one. Distance and energy add up, the average speed is taken
+    /// over the riding time without the pause, and this ride's samples are shifted onto the combined timeline.
+    public func merged(after previous: RideSummary) -> RideSummary {
+        let shift = startedAt.timeIntervalSince(previous.startedAt)
+        let shifted = samples.map {
+            RideSample(offset: $0.offset + shift, speedKmh: $0.speedKmh, powerWatts: $0.powerWatts,
+                       batteryPercent: $0.batteryPercent, voltage: $0.voltage)
+        }
+        let distance = previous.distanceKm + distanceKm
+        let ridingTime = previous.duration + duration
+        let resistances = [previous.internalResistanceOhm, internalResistanceOhm].compactMap { $0 }
+        return RideSummary(
+            startedAt: previous.startedAt,
+            endedAt: endedAt,
+            distanceKm: distance,
+            averageSpeedKmh: ridingTime > 0 ? distance / (ridingTime / 3600) : 0,
+            maxSpeedKmh: max(previous.maxSpeedKmh, maxSpeedKmh),
+            energyWh: previous.energyWh + energyWh,
+            batteryStart: previous.batteryStart,
+            batteryEnd: batteryEnd,
+            maxControllerTemperature: max(previous.maxControllerTemperature, maxControllerTemperature),
+            maxMotorTemperature: max(previous.maxMotorTemperature, maxMotorTemperature),
+            internalResistanceOhm: resistances.isEmpty ? nil : resistances.reduce(0, +) / Double(resistances.count),
+            samples: previous.samples + shifted
+        )
+    }
 }
