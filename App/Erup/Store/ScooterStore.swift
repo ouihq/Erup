@@ -415,7 +415,7 @@ final class ScooterStore {
 
     /// Loads the AT settings once per connection, so Settings is already filled when it opens.
     private func prefetchSettingsIfNeeded() {
-        guard !settingsPrefetched, !isLoadingSettings, isReady else { return }
+        guard !FeatureFlags.pauseAutomaticReads, !settingsPrefetched, !isLoadingSettings, isReady else { return }
         settingsPrefetched = true
         Task {
             try? await Task.sleep(for: .milliseconds(1500))
@@ -425,7 +425,7 @@ final class ScooterStore {
 
     /// Reads the real lock and cruise state once per connection while the scooter stands still.
     private func refreshControlWordIfNeeded(speedKmh: Double, force: Bool = false) {
-        guard isInForeground, force || (controlWord == nil && controlWordAttempts < 3), !isReadingControlWord,
+        guard isInForeground, force || (!FeatureFlags.pauseAutomaticReads && controlWord == nil && controlWordAttempts < 3), !isReadingControlWord,
               speedKmh <= ControlFrame.standstillThresholdKmh, pendingChanges.isEmpty else { return }
         isReadingControlWord = true
         if !force { controlWordAttempts += 1 }

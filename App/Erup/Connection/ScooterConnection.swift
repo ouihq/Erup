@@ -135,10 +135,17 @@ actor ScooterConnection: ScooterLink {
     private var bridgeWatchdog: Task<Void, Never>?
     private var bridgeStartedAt: ContinuousClock.Instant?
     private var lastFrameAt: ContinuousClock.Instant?
-    private var lastStallAction: ContinuousClock.Instant?
     private var stallPolicy = StreamStallPolicy()
+    private var keepAliveGate = KeepAliveGate()
     private var framesInWindow = 0
     private var keepAlivesInWindow = 0
+    private var writesInWindow = 0
+    private var blockedInWindow = 0
+    private var blockedSinceLastFrame = 0
+    /// The last write that was not a keep-alive, so a stall can be tied to what the app sent just before it.
+    private var lastOtherWrite: (label: String, at: ContinuousClock.Instant)?
+    private var bridgeClosedAt: ContinuousClock.Instant?
+    private var lastStallStartedLog: ContinuousClock.Instant?
     private var lastHealthLog = ContinuousClock.now
     private var bridgeBacklog: [BridgeEvent] = []
     private var telemetryFrameCount = 0
@@ -352,6 +359,7 @@ actor ScooterConnection: ScooterLink {
         let open = bridgeStartedAt.map { Self.seconds(ContinuousClock.now - $0) } ?? "?"
         Self.log.log(.bridge, "bridge exchange closed after \(open) s")
         bridgeStartedAt = nil
+        bridgeClosedAt = .now
         bridgeWatchdog?.cancel()
         bridgeWatchdog = nil
         bridgeBacklog.removeAll()
@@ -359,8 +367,9 @@ actor ScooterConnection: ScooterLink {
         decoder.reset()
         if sessionActive {
             sendNow(SessionFrames.leaveBridge)
-            // The keep-alive was paused while the bridge was open. Resume it at once so the scooter keeps streaming.
-            sendKeepAlive()
+            // Do not send a keep-alive right behind the leave frame: that stops the stream (see KeepAliveGate). The
+            // timer and the frame-driven rule resume it once the hold is over.
+            keepAliveGate.holdAfterBridge(now: .now)
         }
     }
 
@@ -608,7 +617,6 @@ actor ScooterConnection: ScooterLink {
         telemetryFrameCount = 0
         lastKeepAlive = nil
         lastFrameAt = nil
-        lastStallAction = nil
         stallPolicy.reset()
         decoder.reset()
         writeQueue.enqueue(.init(channel: .data, bytes: SessionFrames.start))
@@ -632,6 +640,8 @@ actor ScooterConnection: ScooterLink {
         bridgeWatchdog = nil
         bridgeLease.release()
         bridgeStartedAt = nil
+        bridgeClosedAt = nil
+        keepAliveGate.reset()
         lastFrameAt = nil
         stallPolicy.reset()
         bridgeBacklog.removeAll()
@@ -639,7 +649,12 @@ actor ScooterConnection: ScooterLink {
     }
 
     private func noteTelemetryFrame() {
+        if stallPolicy.isRecovering, let last = lastStallStartedLog {
+            Self.log.log(.stream, "frames are back after the keep-alive burst, no reconnect needed (\(Self.seconds(ContinuousClock.now - last)) s)")
+        }
         stallPolicy.reset()
+        lastStallStartedLog = nil
+        blockedSinceLastFrame = 0
         if !receivedTelemetry {
             receivedTelemetry = true
             reconnectAttempt = 0
@@ -681,24 +696,48 @@ actor ScooterConnection: ScooterLink {
             return
         }
         let silentFor = now - lastFrameAt
-        if stallPolicy.showsAsSilent(silentFor: silentFor), state == .connected {
+        // Frames that arrived after the exchange closed prove the stream came back.
+        let afterBridge = bridgeClosedAt.map { $0 > lastFrameAt } ?? false
+        if stallPolicy.showsAsSilent(silentFor: silentFor, afterBridge: afterBridge), state == .connected {
             Self.log.log(.stream, "no frames for \(Self.seconds(silentFor)) s, showing the link as lost")
             setState(.searching(.silent))
         }
-        switch stallPolicy.evaluate(silentFor: silentFor, sinceLastAction: lastStallAction.map { now - $0 }) {
+        switch stallPolicy.evaluate(silentFor: silentFor, afterBridge: afterBridge) {
         case .none:
             return
-        case .restartSession:
-            lastStallAction = now
-            Self.log.log(.stream, "stream stalled for \(Self.seconds(silentFor)) s, restarting it (attempt \(stallPolicy.attempts))")
-            sendNow(SessionFrames.start)
-            lastKeepAlive = nil
-            sendKeepAlive()
+        case .sendKeepAlives:
+            Self.log.log(.stream, "stream stalled: \(stallContext(silentFor: silentFor, lastFrameAt: lastFrameAt)). Trying a keep-alive burst first, which needs no reconnect")
+            lastStallStartedLog = .now
+            Task { await self.sendKeepAliveBurst() }
         case .reconnect:
-            lastStallAction = now
-            Self.log.log(.stream, "stream still stalled after \(Self.seconds(silentFor)) s, dropping the link to reconnect")
+            Self.log.log(.stream, "the keep-alive burst did not help after \(Self.seconds(silentFor)) s. Dropping the link to reconnect (the scooter beeps when it reconnects)")
             if let peripheral { central?.cancelPeripheralConnection(peripheral) }
         }
+    }
+
+    /// Three keep-alives, spaced out because the write queue keeps only one waiting at a time. On a real scooter this
+    /// revived a stalled stream within half a second.
+    private func sendKeepAliveBurst() async {
+        for index in 0..<3 {
+            lastKeepAlive = nil
+            sendKeepAlive()
+            if index < 2 { try? await Task.sleep(for: .milliseconds(100)) }
+        }
+    }
+
+    /// What the app was doing around the last frame, to find what triggers a stall.
+    private func stallContext(silentFor: Duration, lastFrameAt: ContinuousClock.Instant) -> String {
+        var parts = ["no frame for \(Self.seconds(silentFor)) s"]
+        if let other = lastOtherWrite {
+            let before = lastFrameAt - other.at
+            let when = before >= .zero ? "\(Self.seconds(before)) s before the last frame" : "\(Self.seconds(.zero - before)) s after the last frame"
+            parts.append("last non-keep-alive write: \(other.label), \(when)")
+        } else {
+            parts.append("no non-keep-alive write this session")
+        }
+        parts.append("\(writeQueue.count) write(s) waiting, radio buffer full \(blockedSinceLastFrame)x since the last frame")
+        parts.append("bridge \(bridgeActive ? "open" : "closed")")
+        return parts.joined(separator: "; ")
     }
 
     /// Called when the app returns to the foreground: clear an exchange that was left open and check the stream now.
@@ -711,17 +750,20 @@ actor ScooterConnection: ScooterLink {
     private func logHealthIfDue() {
         let now = ContinuousClock.now
         guard now - lastHealthLog >= Self.healthLogInterval else { return }
-        Self.log.log(.stream, "stream ok: \(framesInWindow) frames, \(keepAlivesInWindow) keep-alives in \(Self.seconds(now - lastHealthLog)) s")
+        Self.log.log(.stream, "stream ok: \(framesInWindow) frames in \(Self.seconds(now - lastHealthLog)) s; keep-alives queued \(keepAlivesInWindow), writes sent \(writesInWindow), radio buffer full \(blockedInWindow)x")
         lastHealthLog = now
         framesInWindow = 0
         keepAlivesInWindow = 0
+        writesInWindow = 0
+        blockedInWindow = 0
     }
 
     private func sendKeepAlive() {
-        guard sessionActive, !bridgeActive else { return }
+        guard sessionActive, !bridgeActive, keepAliveGate.allows(at: .now) else { return }
         lastKeepAlive = ContinuousClock.now
-        keepAlivesInWindow += 1
-        writeQueue.enqueue(.init(channel: .data, bytes: SessionFrames.keepAlive, isKeepAlive: true))
+        if writeQueue.enqueue(.init(channel: .data, bytes: SessionFrames.keepAlive, isKeepAlive: true)) {
+            keepAlivesInWindow += 1
+        }
         flushWrites()
     }
 
@@ -739,6 +781,25 @@ actor ScooterConnection: ScooterLink {
                 continue
             }
             target.writeValue(Data(item.bytes), for: characteristic, type: .withoutResponse)
+            writesInWindow += 1
+            if !item.isKeepAlive {
+                let label = Self.label(for: item)
+                lastOtherWrite = (label, .now)
+                Self.log.log(.stream, "wrote \(label)")
+            }
+        }
+        if !writeQueue.isEmpty, !target.canSendWriteWithoutResponse {
+            blockedInWindow += 1
+            blockedSinceLastFrame += 1
+        }
+    }
+
+    private static func label(for item: WriteQueue.Item) -> String {
+        if item.channel == .command { return "AT command (\(item.bytes.count) bytes)" }
+        switch item.bytes {
+        case SessionFrames.start: return "start / leave-bridge frame"
+        case SessionFrames.enterBridge: return "enter-bridge frame"
+        default: return "\(item.bytes.count)-byte data frame (control or bridge request)"
         }
     }
 

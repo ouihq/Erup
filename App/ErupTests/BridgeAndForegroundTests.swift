@@ -74,42 +74,92 @@ final class ForegroundRefreshTests: XCTestCase {
     }
 }
 
+final class KeepAliveGateTests: XCTestCase {
+    func testKeepAlivesAreAllowedUntilABridgeExchangeIsClosed() {
+        let gate = KeepAliveGate()
+        XCTAssertTrue(gate.allows(at: .now))
+    }
+
+    func testNoKeepAliveRightAfterLeavingTheBridge() {
+        // A keep-alive straight after the leave frame killed the stream in 8 of 8 exchanges on a real scooter.
+        var gate = KeepAliveGate()
+        let left = ContinuousClock.now
+        gate.holdAfterBridge(now: left)
+        XCTAssertFalse(gate.allows(at: left))
+        XCTAssertFalse(gate.allows(at: left + .milliseconds(100)))
+        XCTAssertFalse(gate.allows(at: left + .milliseconds(399)))
+    }
+
+    func testKeepAlivesResumeAfterTheHold() {
+        var gate = KeepAliveGate()
+        let left = ContinuousClock.now
+        gate.holdAfterBridge(now: left)
+        XCTAssertTrue(gate.allows(at: left + .milliseconds(400)))
+        XCTAssertTrue(gate.allows(at: left + .seconds(2)))
+    }
+
+    func testTheHoldCoversTheSilencePeriodThatWorkedOnARealScooter() {
+        // 250 ms and 500 ms both resumed 12 of 12 times; the hold must be inside that range.
+        XCTAssertGreaterThanOrEqual(KeepAliveGate.holdAfterLeavingBridge, .milliseconds(250))
+        XCTAssertLessThanOrEqual(KeepAliveGate.holdAfterLeavingBridge, .milliseconds(500))
+    }
+
+    func testANewSessionStartsWithoutAHold() {
+        var gate = KeepAliveGate()
+        gate.holdAfterBridge(now: .now)
+        gate.reset()
+        XCTAssertTrue(gate.allows(at: .now))
+    }
+}
+
 final class StreamStallPolicyTests: XCTestCase {
     func testNothingHappensWhileFramesKeepArriving() {
         var policy = StreamStallPolicy()
-        XCTAssertEqual(policy.evaluate(silentFor: .milliseconds(300), sinceLastAction: nil), .none)
-        XCTAssertEqual(policy.evaluate(silentFor: .milliseconds(4900), sinceLastAction: nil), .none)
+        XCTAssertEqual(policy.evaluate(silentFor: .milliseconds(300)), .none)
+        XCTAssertEqual(policy.evaluate(silentFor: .milliseconds(3900)), .none)
     }
 
-    func testRestartsTheStreamThreeTimesThenReconnectsOnce() {
+    func testAStallFirstTriesAKeepAliveBurstThatKeepsTheLinkUp() {
+        // A reconnect makes the scooter beep, so it is only the fallback.
         var policy = StreamStallPolicy()
-        var actions: [StreamStallPolicy.Action] = []
-        for _ in 0..<6 {
-            actions.append(policy.evaluate(silentFor: .seconds(5), sinceLastAction: nil))
-        }
-        XCTAssertEqual(actions, [.restartSession, .restartSession, .restartSession, .reconnect, .none, .none])
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(4)), .sendKeepAlives)
+        XCTAssertTrue(policy.isRecovering)
     }
 
-    func testActionsAreSpacedOut() {
+    func testReconnectsOnlyWhenTheKeepAliveBurstDidNotHelp() {
         var policy = StreamStallPolicy()
-        XCTAssertEqual(policy.evaluate(silentFor: .seconds(6), sinceLastAction: nil), .restartSession)
-        XCTAssertEqual(policy.evaluate(silentFor: .seconds(6), sinceLastAction: .milliseconds(300)), .none,
-                       "a restart needs a moment to produce a frame before trying again")
-        XCTAssertEqual(policy.evaluate(silentFor: .seconds(8), sinceLastAction: .seconds(2)), .restartSession)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(4)), .sendKeepAlives)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(5)), .none, "the keep-alive burst gets a moment to work")
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(6)), .reconnect)
     }
 
-    func testRecoveryStartsOverAfterFramesReturn() {
+    func testOnlyOneReconnectIsRequestedPerStall() {
         var policy = StreamStallPolicy()
-        _ = policy.evaluate(silentFor: .seconds(6), sinceLastAction: nil)
+        let actions = [4, 5, 6, 8, 9, 12].map { policy.evaluate(silentFor: .seconds($0)) }
+        XCTAssertEqual(actions, [.sendKeepAlives, .none, .reconnect, .none, .none, .none])
+    }
+
+    func testFramesReturningStartsTheNextStallFromScratch() {
+        var policy = StreamStallPolicy()
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(4)), .sendKeepAlives)
         policy.reset()
-        XCTAssertEqual(policy.attempts, 0)
-        XCTAssertEqual(policy.evaluate(silentFor: .seconds(6), sinceLastAction: nil), .restartSession)
+        XCTAssertFalse(policy.isRecovering)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(4)), .sendKeepAlives)
     }
 
-    func testAStalledLinkIsShownAsLostAfterTenSeconds() {
+    func testAfterABridgeExchangeTheStreamIsExpectedBackWithinTwoSeconds() {
+        var policy = StreamStallPolicy()
+        XCTAssertEqual(policy.evaluate(silentFor: .milliseconds(1900), afterBridge: true), .none)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(2), afterBridge: true), .sendKeepAlives)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(4), afterBridge: true), .reconnect)
+        XCTAssertTrue(StreamStallPolicy().showsAsSilent(silentFor: .seconds(2), afterBridge: true))
+        XCTAssertFalse(StreamStallPolicy().showsAsSilent(silentFor: .seconds(2)), "without a bridge exchange four seconds are allowed")
+    }
+
+    func testAStalledLinkIsShownAsLostFromFourSeconds() {
         let policy = StreamStallPolicy()
-        XCTAssertFalse(policy.showsAsSilent(silentFor: .seconds(9)))
-        XCTAssertTrue(policy.showsAsSilent(silentFor: .seconds(10)))
+        XCTAssertFalse(policy.showsAsSilent(silentFor: .seconds(3)))
+        XCTAssertTrue(policy.showsAsSilent(silentFor: .seconds(4)))
     }
 }
 

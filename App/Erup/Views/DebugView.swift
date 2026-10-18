@@ -4,6 +4,7 @@ import SwiftUI
 struct DebugView: View {
     @Environment(ScooterStore.self) private var store
     @AppStorage(FeatureFlags.lockFlagMeansLockedKey) private var lockFlagMeansLocked = false
+    @AppStorage(FeatureFlags.pauseAutomaticReadsKey) private var pauseAutomaticReads = false
 
     @State private var events: [DiagnosticLog.Entry] = []
     @State private var copied = false
@@ -11,6 +12,14 @@ struct DebugView: View {
     var body: some View {
         List {
             diagnosticsSection
+
+            Section {
+                Toggle("Pause automatic reads", isOn: $pauseAutomaticReads)
+            } header: {
+                Text("Connection test")
+            } footer: {
+                Text("Erup normally reads settings and the lock state by itself after connecting. Turn this on to send nothing but keep-alives, leave the app open for a few minutes and export the diagnostics. If \"Scooter not responding\" stops, those reads were causing it. The lock state and settings then only load when you open their screens.")
+            }
 
             Section {
                 Toggle("Lock bit set means locked", isOn: $lockFlagMeansLocked)

@@ -33,6 +33,7 @@ struct DiagnosticReport: Transferable {
             ("Last frame", store.lastTelemetryDate.map { String(format: "%.1f s ago", Date().timeIntervalSince($0)) } ?? "never"),
             ("Bluetooth firmware", store.deviceInfo.firmwareRevision ?? "unknown"),
             ("Frame logging", store.isFrameLoggingEnabled ? "on" : "off"),
+            ("Automatic reads", FeatureFlags.pauseAutomaticReads ? "PAUSED (debug test)" : "on"),
         ]
         items.append(("Privacy", "no PIN, scooter name or Bluetooth identifiers are included"))
         return items
