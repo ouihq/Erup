@@ -24,12 +24,22 @@
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/rides.png",
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/battery.png"
       ],
-      "version": "1.2.6",
+      "version": "1.2.7",
       "versionDate": "2026-10-18",
-      "versionDescription": "chore(release): bump version to 1.2.6",
-      "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.2.6/Erup.ipa",
-      "size": 1520629,
+      "versionDescription": "chore(release): bump version to 1.2.7",
+      "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.2.7/Erup.ipa",
+      "size": 1525575,
       "versions": [
+        {
+          "version": "1.2.7",
+          "buildVersion": "20261018.9",
+          "date": "2026-10-18",
+          "localizedDescription": "chore(release): bump version to 1.2.7",
+          "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.2.7/Erup.ipa",
+          "size": 1525575,
+          "sha256": "16909192e0dead1911d33d48f8867a48b930ad19502ee6b61f4aa13f58d67c1a",
+          "minOSVersion": "18.0"
+        },
         {
           "version": "1.2.6",
           "buildVersion": "20261018.8",
