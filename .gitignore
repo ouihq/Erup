@@ -1,0 +1,14 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Bluetooth captures can contain PINs and device identifiers
+*.pklg
+*.btsnoop
+*.pcap
+*.pcapng

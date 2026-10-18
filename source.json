@@ -1,0 +1,53 @@
+{
+  "name": "Erup",
+  "identifier": "me.ouihq.erup.source",
+  "subtitle": "Native companion app for Pure Electric scooters",
+  "description": "Live speed and battery, automatic ride logging, widgets, Live Activity and Control Center toggles over a Bluetooth link that reconnects on its own.",
+  "iconURL": "https://raw.githubusercontent.com/ouihq/Erup/main/App/Erup/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+  "website": "https://github.com/ouihq/Erup",
+  "tintColor": "#0A84FF",
+  "featuredApps": [
+    "me.ouihq.erup"
+  ],
+  "apps": [
+    {
+      "name": "Erup",
+      "bundleIdentifier": "me.ouihq.erup",
+      "developerName": "ouihq",
+      "subtitle": "Your scooter, at a glance.",
+      "localizedDescription": "Erup replaces the official Pure Electric app with a fast, native iOS app: a live dashboard, automatic rides with routes and charts, range from your own consumption, a battery health trend, widgets, a Live Activity, Control Center toggles and Siri shortcuts. Speed limits are never changed.",
+      "iconURL": "https://raw.githubusercontent.com/ouihq/Erup/main/App/Erup/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+      "tintColor": "#0A84FF",
+      "category": "utilities",
+      "screenshots": [],
+      "version": "1.2.0",
+      "versionDate": "2026-10-18",
+      "versionDescription": "Rebuilt Settings in the iOS style, a notification center you can clear, export of rides and sensor data for a period you choose, compressed ride storage, an iPhone-only app, larger-text and VoiceOver support, a clearer not-connected card, regenerative braking on the speedometer and exact lock and cruise confirmation.",
+      "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.2.0/Erup.ipa",
+      "size": 1960836,
+      "versions": [
+        {
+          "version": "1.2.0",
+          "buildVersion": "20261018.2",
+          "date": "2026-10-18",
+          "localizedDescription": "Rebuilt Settings in the iOS style, a notification center you can clear, export of rides and sensor data for a period you choose, compressed ride storage, an iPhone-only app, larger-text and VoiceOver support, a clearer not-connected card, regenerative braking on the speedometer and exact lock and cruise confirmation.",
+          "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.2.0/Erup.ipa",
+          "size": 1960836,
+          "minOSVersion": "18.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [
+          "com.apple.security.application-groups"
+        ],
+        "privacy": {
+          "NSBluetoothAlwaysUsageDescription": "Erup connects to your scooter over Bluetooth.",
+          "NSFaceIDUsageDescription": "Erup asks for Face ID before unlocking your scooter or changing its PIN.",
+          "NSLocationWhenInUseUsageDescription": "Erup records the route of your rides."
+        }
+      }
+    }
+  ],
+  "news": [],
+  "nsfw": false
+}

@@ -1,0 +1,125 @@
+name: Erup
+
+options:
+  bundleIdPrefix: me.ouihq
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6"
+    SWIFT_STRICT_CONCURRENCY: complete
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.2.0"
+    CURRENT_PROJECT_VERSION: "20261018.2"
+
+packages:
+  ScooterProtocol:
+    path: .
+
+targets:
+  Erup:
+    type: application
+    platform: iOS
+    sources:
+      - App/Erup
+      - App/Shared
+    dependencies:
+      - package: ScooterProtocol
+      - package: ScooterProtocol
+        product: ScooterAnalytics
+      - target: ErupWidgets
+        embed: true
+    entitlements:
+      path: App/Erup/Erup.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.me.ouihq.erup
+    info:
+      path: App/Erup/Info.plist
+      properties:
+        CFBundleDisplayName: Erup
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSBluetoothAlwaysUsageDescription: Erup connects to your scooter over Bluetooth.
+        NSFaceIDUsageDescription: Erup asks for Face ID before unlocking your scooter or changing its PIN.
+        NSLocationWhenInUseUsageDescription: Erup records the route of your rides.
+        UIBackgroundModes:
+          - bluetooth-central
+          - location
+        NSSupportsLiveActivities: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.ouihq.erup
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: NO
+
+  ErupWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - App/ErupWidgets
+      - App/Shared
+    dependencies:
+      - package: ScooterProtocol
+    entitlements:
+      path: App/ErupWidgets/ErupWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.me.ouihq.erup
+    info:
+      path: App/ErupWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Erup
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.ouihq.erup.widgets
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+
+  ErupTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - App/ErupTests
+    dependencies:
+      - target: Erup
+      - package: ScooterProtocol
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.ouihq.erup.tests
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Erup:
+    build:
+      targets:
+        Erup: all
+        ErupWidgets: all
+        ErupTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ErupTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
