@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package tests
+        run: swift test
+      - name: App tests
+        run: >
+          xcodebuild -scheme Erup
+          -destination 'platform=iOS Simulator,name=iPhone 17' test
+          CODE_SIGNING_ALLOWED=NO
