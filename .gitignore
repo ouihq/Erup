@@ -12,3 +12,7 @@ xcuserdata/
 *.btsnoop
 *.pcap
 *.pcapng
+
+# Scooter diagnostics script output and its virtualenv
+diagnostics-*/
+.venv/
