@@ -14,16 +14,13 @@
 ![No dependencies](https://img.shields.io/badge/dependencies-none-8E8E93)
 ![Version](https://img.shields.io/badge/version-1.2.0-0A84FF)
 
-<!-- Badge: https://faq.altstore.io/developers/download-on-altstore-badge. Needs a published source.json and a release with Erup.ipa. -->
 <a href="https://altstore.io/source/raw.githubusercontent.com/ouihq/Erup/main/source.json?app=me.ouihq.erup"><img src="docs/badges/DownloadBadge_light.png" alt="Download on AltStore" width="245" height="78"></a>
-&nbsp;
-<a href="https://intradeus.github.io/http-protocol-redirector?r=sidestore://source?url=https://raw.githubusercontent.com/ouihq/Erup/main/source.json"><img src="https://img.shields.io/badge/Add_to-SideStore-7E3BED?style=for-the-badge" alt="Add to SideStore" height="48"></a>
 
 <sub><a href="#install">Install</a> · <a href="#features">Features</a> · <a href="#safety">Safety</a> · <a href="#your-data">Your data</a> · <a href="#building-from-source">Build</a> · <a href="#contributing">Contributing</a></sub>
 
 </div>
 
-Live speed and battery at a glance, rides that log themselves, widgets, a Live Activity and Control Center toggles, all over a Bluetooth link that reconnects on its own. Built to feel like an Apple app: quick to open, quiet in the background, readable in one glance, and fully usable with larger text and VoiceOver.
+Live speed and battery at a glance, rides that log themselves, widgets, a Live Activity and Control Center toggles, all over a Bluetooth link that reconnects on its own. Quick to open, quiet in the background, and fully usable with larger text and VoiceOver.
 
 > [!NOTE]
 > Independent project, not affiliated with Pure Electric. The Bluetooth protocol was reverse-engineered from a real scooter.
@@ -44,32 +41,30 @@ Requires **iOS 18** or later. **iPhone only.**
 
 ## Install
 
-### SideStore or AltStore
+### AltStore
 
-Tap one of the buttons at the top, or add the source by hand:
+Tap the badge at the top, or add the source by hand in AltStore:
 
 ```
 https://raw.githubusercontent.com/ouihq/Erup/main/source.json
 ```
 
-Then open **Erup** in the source's list and tap **Get**. You can also download `Erup.ipa` from the [latest release](https://github.com/ouihq/Erup/releases/latest) and open it in SideStore or AltStore. The IPA is unsigned on purpose; the store signs it with your own Apple ID.
+Then open **Erup** in the source's list and tap **Get**. You can also download `Erup.ipa` from the [latest release](https://github.com/ouihq/Erup/releases/latest) and open it in AltStore. The IPA is unsigned on purpose; AltStore signs it with your own Apple ID.
 
 <details>
 <summary><b>Tips for a free Apple ID</b></summary>
 
 | | |
 |---|---|
-| **Weekly refresh** | Apps signed with a free Apple ID expire after 7 days. SideStore can refresh them in the background over its local VPN; AltStore needs its Mac or AltServer. |
+| **Weekly refresh** | Apps signed with a free Apple ID expire after 7 days. AltStore refreshes them in the background while AltServer runs on your Mac or PC. |
 | **App IDs** | Erup uses two: the app and its widget extension. A free account may register 10 new App IDs per week and run 3 sideloaded apps. When asked about extensions, choose **Keep App Extensions (Register App ID for Each Extension)**. |
 | **Without extensions** | If you run out of App IDs, choose **Remove App Extensions**. The app itself works fully, but widgets, the Live Activity and the Control Center toggles are gone. |
-| **App Group** | The store changes the App Group name when it signs the app. Erup reads the real name from the app, so widgets and the app still share data. |
+| **App Group** | AltStore changes the App Group name when it signs the app. Erup reads the real name from the app, so widgets and the app still share data. |
 | **LiveContainer** | Works for the dashboard, but there is no background Bluetooth, no widgets or Live Activity, and routes may be unavailable. A normal sideload is recommended. |
 
 </details>
 
-### Building from source
-
-See [Building from source](#building-from-source).
+Prefer to build it yourself? See [Building from source](#building-from-source).
 
 ## Features
 
@@ -153,7 +148,7 @@ xcodebuild -scheme Erup -destination 'platform=iOS Simulator,name=iPhone 17' tes
 
 About 100 tests: CRC and capture vectors, fragmented and corrupted streams, bridge and AT replies, the speed-cap rule, ride detection and range, lock and cruise confirmation, optimistic updates and rollback, alerts, statistics, compression and export.
 
-## The AltStore and SideStore source
+## The AltStore source
 
 [`source.json`](source.json) follows the [AltStore source format](https://faq.altstore.io/developers/make-a-source) and is read straight from the `main` branch. It lists the app, its permissions (they must match the IPA exactly) and every released version.
 
@@ -167,7 +162,7 @@ About 100 tests: CRC and capture vectors, fragmented and corrupted streams, brid
    ```
 
 3. Create a GitHub release named `v<version>` and attach the file the script prepared, `build/Erup.ipa`, with exactly that name.
-4. Commit `source.json`. Stores pick the change up the next time they refresh the source.
+4. Commit `source.json`. AltStore picks the change up the next time they refresh the source.
 
 **The badge.** The "Download on AltStore" button at the top links to `https://altstore.io/source/<source URL without https://>?app=<bundle id>`, as described in the [badge instructions](https://faq.altstore.io/developers/download-on-altstore-badge). Its images live in [`docs/badges`](docs/badges). Add `&version=<version>` to link to one specific version.
 
@@ -218,7 +213,7 @@ App/ErupTests             App tests
 scripts/                  update-source.sh keeps source.json in step with the IPA
 docs/badges               Download on AltStore badge images
 project.yml               XcodeGen definition
-source.json               SideStore / AltStore source
+source.json               AltStore source
 ```
 
 ## Known limitations
