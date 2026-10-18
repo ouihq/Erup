@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Keeps source.json in step with a built IPA: version, build number, size and date are read from the file
+# Keeps source.json in step with a built IPA: version, build number, size, SHA-256 and date are read from the file
 # itself, so the source never disagrees with the download.
 #
 #   scripts/update-source.sh [path/to/Erup-unsigned.ipa] ["Release notes for this version"]
 #
-# For a version that is already listed, only its size, build and date are refreshed. For a new version, an
+# For a version that is already listed, only its size, hash, build and date are refreshed. For a new version, an
 # entry is added at the top of "versions" (AltStore treats the first entry as the latest release).
 set -euo pipefail
 
@@ -14,7 +14,7 @@ notes="${2:-}"
 [[ -f "$ipa" ]] || { echo "No IPA at $ipa. Build one first." >&2; exit 1; }
 
 python3 -I - "$ipa" "$notes" <<'PY'
-import datetime, json, os, plistlib, shutil, sys, zipfile
+import datetime, hashlib, json, os, plistlib, shutil, sys, zipfile
 
 ipa, notes = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(ipa) as archive:
@@ -24,6 +24,8 @@ with zipfile.ZipFile(ipa) as archive:
 
 version, build = info["CFBundleShortVersionString"], info["CFBundleVersion"]
 size = os.path.getsize(ipa)
+with open(ipa, "rb") as handle:
+    sha256 = hashlib.sha256(handle.read()).hexdigest()
 today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
 url = f"https://github.com/ouihq/Erup/releases/download/v{version}/Erup.ipa"
 
@@ -37,9 +39,9 @@ if entry is None:
     versions.insert(0, entry)
 elif notes:
     entry["localizedDescription"] = notes
-entry.update({"buildVersion": build, "date": today, "downloadURL": url, "size": size})
+entry.update({"buildVersion": build, "date": today, "downloadURL": url, "size": size, "sha256": sha256})
 # Keep the key order AltStore documents.
-order = ["version", "buildVersion", "date", "localizedDescription", "downloadURL", "size", "minOSVersion"]
+order = ["version", "buildVersion", "date", "localizedDescription", "downloadURL", "size", "sha256", "minOSVersion"]
 versions[versions.index(entry)] = {k: entry[k] for k in order if k in entry}
 
 # Older AltStore builds read the latest version from the app itself.
@@ -52,6 +54,6 @@ with open("source.json", "w") as handle:
     handle.write("\n")
 
 shutil.copyfile(ipa, "build/Erup.ipa")
-print(f"source.json: Erup {version} ({build}), {size:,} bytes, {today}")
+print(f"source.json: Erup {version} ({build}), {size:,} bytes, sha256 {sha256}, {today}")
 print("Upload build/Erup.ipa as the asset 'Erup.ipa' of the GitHub release v" + version + ".")
 PY
