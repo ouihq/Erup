@@ -258,15 +258,15 @@ struct BatteryView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Set pack capacity").font(.subheadline.weight(.medium))
-                    Text("Optional. Enter the Wh value printed on the battery; 0 lets the app learn it. Pure Flex: 342 Wh (36 V, 9.5 Ah).")
+                    Text("Optional. Enter the Wh value printed on the battery; 0 lets the app learn it. Pure Flex: 345.6 Wh (36 V, 9.6 Ah).")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 12)
                 TextField("0", value: $manualCapacityWh, format: .number)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
-                    .frame(width: 64)
+                    .frame(width: 72)
                     .textFieldStyle(.roundedBorder)
                 Text("Wh").foregroundStyle(.secondary)
             }
