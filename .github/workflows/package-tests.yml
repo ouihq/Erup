@@ -1,0 +1,21 @@
+name: Package tests
+
+# Pure Swift packages (protocol, analytics). Runs on pull requests that touch them, or by hand.
+on:
+  pull_request:
+    paths: ["Sources/**", "Tests/**", "Package.swift"]
+  workflow_dispatch:
+
+concurrency:
+  group: package-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: swift test
+    runs-on: ${{ vars.RUNNER_IMAGE || 'macos-26' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s "${{ vars.XCODE_PATH || '/Applications/Xcode.app' }}"
+      - run: swift test
