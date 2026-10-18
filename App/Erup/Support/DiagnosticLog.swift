@@ -6,7 +6,7 @@ import Foundation
 final class DiagnosticLog: @unchecked Sendable {
     static let shared = DiagnosticLog()
 
-    enum Category: String, Codable, CaseIterable, Sendable {
+    enum Category: String, Codable, Sendable {
         case app, connection, stream, bridge, command, ride, error
     }
 

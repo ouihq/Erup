@@ -40,15 +40,14 @@ import asyncio
 import csv
 import datetime as dt
 import json
-import os
 import platform
 import random
 import re
 import statistics
 import sys
 import time
-from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -1068,7 +1067,7 @@ def environment(args) -> dict:
 
 async def status_loop(link: Link, args) -> None:
     """Prints a line every 10 s so you can see the run is alive, and reminds you to keep the throttle held."""
-    last_count, last_t, beat = 0, time.monotonic(), 0
+    last_count, last_t = 0, time.monotonic()
     while True:
         await asyncio.sleep(10)
         now = time.monotonic()
@@ -1081,7 +1080,6 @@ async def status_loop(link: Link, args) -> None:
         if args.throttle and speed is not None and speed < 0.5 and link.zero_speed_since and now - link.zero_speed_since > 40:
             print("   ! speed has been 0 for a while: the scooter may switch itself off. Hold the throttle (wheel off the ground).")
         last_count, last_t = count, now
-        beat += 1
 
 
 async def run(args) -> int:

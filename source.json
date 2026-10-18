@@ -108,7 +108,7 @@
         "privacy": {
           "NSBluetoothAlwaysUsageDescription": "Erup connects to your scooter over Bluetooth.",
           "NSFaceIDUsageDescription": "Erup asks for Face ID before unlocking your scooter or changing its PIN.",
-          "NSLocationWhenInUseUsageDescription": "Erup records the route of your rides."
+          "NSLocationWhenInUseUsageDescription": "Erup uses your location to keep the scooter connection running while the screen is off, and to record the route of your rides if you turn that on."
         }
       }
     }

@@ -172,7 +172,7 @@ actor ScooterConnection: ScooterLink {
         Self.log.log(.connection, "Bluetooth started (paired scooter: \(pairing.peripheralID == nil ? "none" : "saved"))")
         central = CBCentralManager(
             delegate: delegate,
-            queue: DispatchQueue(label: "me.ouihq.erup.central"),
+            queue: DispatchQueue(label: "me.ouihq.erup.central", qos: .userInitiated),
             options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreIdentifier]
         )
         eventLoop = Task { await self.runEventLoop() }
@@ -537,12 +537,8 @@ actor ScooterConnection: ScooterLink {
         reconnectAttempt += 1
         reconnectTask = Task {
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
-            self.reconnectIfStillNeeded()
+            self.requestConnectionNow()
         }
-    }
-
-    private func reconnectIfStillNeeded() {
-        requestConnectionNow()
     }
 
     private func requestConnectionNow() {

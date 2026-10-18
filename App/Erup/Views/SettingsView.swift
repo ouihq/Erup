@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage("useMiles") private var useMiles = false
     @AppStorage(AppearanceSetting.storageKey) private var appearance = AppearanceSetting.system
     @AppStorage(RideRecorder.gpsKey) private var recordsGPS = false
+    @AppStorage(BackgroundKeepAlive.storageKey) private var keepRunning = BackgroundKeepAlive.defaultEnabled
 
     var body: some View {
         Form {
@@ -48,6 +49,9 @@ struct SettingsView: View {
                 Toggle(isOn: $recordsGPS) {
                     SettingsLabel(title: "Record routes", symbol: "location.fill")
                 }
+                Toggle(isOn: $keepRunning) {
+                    SettingsLabel(title: "Stay connected with the screen off", symbol: "antenna.radiowaves.left.and.right", tint: .green)
+                }
                 NavigationLink {
                     ServiceSettingsView()
                 } label: {
@@ -56,7 +60,7 @@ struct SettingsView: View {
             } header: {
                 Text("Rides")
             } footer: {
-                Text("Rides are detected automatically. With routes on, the GPS track is recorded while you ride, including in the background.")
+                Text("Rides are detected automatically. With routes on, the GPS track is recorded while you ride, including in the background. \"Stay connected with the screen off\" keeps Erup running while the scooter is connected, so speed, rides and keep-alives do not stop when the phone locks. It uses location (the blue indicator shows) and more battery; iOS otherwise suspends the app within seconds.")
             }
 
             Section {

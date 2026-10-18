@@ -25,7 +25,7 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Erup asks for Face ID before unlocking your scooter or changing its PIN.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Erup records the route of your rides.</string>
+	<string>Erup uses your location to keep the scooter connection running while the screen is off, and to record the route of your rides if you turn that on.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

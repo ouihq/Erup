@@ -32,7 +32,8 @@ Live speed and battery at a glance, rides that log themselves, widgets, a Live A
 - **Live dashboard:** Speedometer with the gear's limit mark and room above it for downhill speed, regenerative braking, battery, range, gear, light, cruise and lock.
 - **Rides that record themselves:** Distance, speeds, energy per kilometre, route on a map, and statistics for the week, month, year or all time.
 - **Works without the scooter:** Rides, battery history and settings stay available. Live widgets show as unavailable instead of empty.
-- **Private by design:** No account, no server, no analytics. Your PIN stays in the Keychain on your iPhone.
+- **Stays connected with the screen off:** While the scooter is connected, Erup keeps iOS from suspending it, so speed, rides and the Bluetooth link keep working with the phone locked. This uses a location session (the blue indicator shows) and some battery. It is on by default and can be switched off in Settings.
+- **Private by design:** No account, no server, no analytics. Your PIN stays in the Keychain on your iPhone, and location never leaves your phone.
 - **Your data stays yours:** Export any period as CSV, GPX and JSON, or reset the app completely.
 
 ##  📱 Compatibility
@@ -72,7 +73,7 @@ Prefer to build it yourself? See [Building from source](#building-from-source).
 
 | | |
 |---|---|
-| 🔌 **Always connected** | Restores Bluetooth after iOS suspends or kills the app and reconnects whenever the scooter is in range, without opening Erup. |
+| 🔌 **Always connected** | Keeps the app running while the scooter is connected, so the link survives a locked screen. Restores Bluetooth after iOS suspends or kills the app and reconnects whenever the scooter is in range, without opening Erup. |
 | 🏁 **Dashboard** | Speedometer, battery and range, gear picker, headlight, cruise and lock. Live speed, power and battery charts, regen, temperatures. |
 | 🗺️ **Rides** | Detected automatically. Distance, duration, average and top speed, energy, Wh/km, battery used, optional GPS route, charts. Statistics by week, month, year and all time. |
 | 🔋 **Range and battery health** | Range from *your* consumption with a learned pack capacity. Pack resistance from voltage sag, plotted over months. |

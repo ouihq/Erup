@@ -182,3 +182,51 @@ final class BackgroundBridgeGatingTests: XCTestCase {
         XCTAssertEqual(reads, 0, "a bridge exchange in the background can be suspended halfway and swallow telemetry")
     }
 }
+
+final class KeepRunningPolicyTests: XCTestCase {
+    private func action(enabled: Bool = true, connected: Bool = true, running: Bool = false) -> KeepRunningPolicy.Action {
+        KeepRunningPolicy.action(enabled: enabled, connected: connected, running: running)
+    }
+
+    func testStartsWhenTheScooterIsConnected() {
+        XCTAssertEqual(action(), .start)
+    }
+
+    func testKeepsRunningWhileConnected() {
+        XCTAssertEqual(action(running: true), .keepRunning)
+    }
+
+    func testStopsAtOnceWhenTheSettingIsTurnedOff() {
+        XCTAssertEqual(action(enabled: false, running: true), .stopNow)
+        XCTAssertEqual(action(enabled: false, connected: false, running: true), .stopNow)
+        XCTAssertEqual(action(enabled: false), .idle)
+    }
+
+    func testSurvivesAShortDisconnectAndThenStops() {
+        XCTAssertEqual(action(connected: false, running: true), .stopAfterGrace)
+        XCTAssertEqual(KeepRunningPolicy.disconnectGrace, .seconds(120))
+    }
+
+    func testNothingToDoWithoutAConnection() {
+        XCTAssertEqual(action(connected: false), .idle)
+    }
+}
+
+final class KeepRunningDefaultTests: XCTestCase {
+    func testTheSettingIsOnUntilTheRiderTurnsItOff() {
+        let key = BackgroundKeepAlive.storageKey
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let previous { UserDefaults.standard.set(previous, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+
+        UserDefaults.standard.removeObject(forKey: key)
+        XCTAssertTrue(BackgroundKeepAlive.isEnabled, "on by default: without it iOS suspends the app and the scooter link stalls")
+
+        UserDefaults.standard.set(false, forKey: key)
+        XCTAssertFalse(BackgroundKeepAlive.isEnabled)
+
+        UserDefaults.standard.set(true, forKey: key)
+        XCTAssertTrue(BackgroundKeepAlive.isEnabled)
+    }
+}

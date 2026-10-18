@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -34,9 +35,23 @@ struct DiagnosticReport: Transferable {
             ("Bluetooth firmware", store.deviceInfo.firmwareRevision ?? "unknown"),
             ("Frame logging", store.isFrameLoggingEnabled ? "on" : "off"),
             ("Automatic reads", FeatureFlags.pauseAutomaticReads ? "PAUSED (debug test)" : "on"),
+            ("Stay connected with the screen off", BackgroundKeepAlive.isEnabled ? "ON (location session keeps the app running)" : "off (iOS suspends the app soon after the screen locks)"),
+            ("Location permission", Self.locationStatus),
         ]
         items.append(("Privacy", "no PIN, scooter name or Bluetooth identifiers are included"))
         return items
+    }
+
+    @MainActor
+    private static var locationStatus: String {
+        switch CLLocationManager().authorizationStatus {
+        case .notDetermined: "not asked yet"
+        case .denied: "DENIED"
+        case .restricted: "restricted"
+        case .authorizedWhenInUse: "while using the app"
+        case .authorizedAlways: "always"
+        @unknown default: "unknown"
+        }
     }
 
     private static var deviceModel: String {

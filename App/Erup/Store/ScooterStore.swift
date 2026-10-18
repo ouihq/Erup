@@ -116,6 +116,9 @@ final class ScooterStore {
     @ObservationIgnored var onRideContextInvalidated: (@MainActor () -> Void)?
     /// The app is leaving the foreground. Rides store what they have so far, because iOS may not give the app another turn.
     @ObservationIgnored var onBackground: (@MainActor () -> Void)?
+    @ObservationIgnored var onForeground: (@MainActor () -> Void)?
+    @ObservationIgnored private var lastFrameProcessed: Date?
+    @ObservationIgnored private var lastBackgroundLog = Date.distantPast
     @ObservationIgnored var onSnapshot: (@MainActor (ScooterSnapshot) -> Void)?
     @ObservationIgnored private var atInbox: [ATReply] = []
     @ObservationIgnored private var unparsedReplies: [String] = []
@@ -449,6 +452,7 @@ final class ScooterStore {
 
     func refreshAfterForeground() {
         DiagnosticLog.shared.isForeground = true
+        onForeground?()
         DiagnosticLog.shared.log(.app, "returned to the foreground: connection \(connection), last frame \(lastTelemetryDate.map { String(format: "%.1f s ago", Date().timeIntervalSince($0)) } ?? "never")")
         Task { await link.resumeAfterBackground() }
         guard connection.isConnected, let telemetry1 = latestTelemetry1, let telemetry2 else { return }
@@ -543,6 +547,7 @@ final class ScooterStore {
         case .telemetry1(let value):
             latestTelemetry1 = value
             lastTelemetryDate = Date()
+            noteBackgroundExecution()
             record(.rx, label: "frame 1", bytes: value.raw)
             onSample?(TelemetrySample(
                 date: Date(),
@@ -566,6 +571,21 @@ final class ScooterStore {
             record(.rx, label: "unknown", bytes: frame)
         case .rejected(let frame, let reason):
             record(.rx, label: "rejected: \(reason)", bytes: frame)
+        }
+    }
+
+    /// While the app is in the background, records whether iOS is giving it time to run. A long gap between two
+    /// frames the app processed means the app was suspended, which is what stops keep-alives and ride tracking.
+    private func noteBackgroundExecution() {
+        let now = Date()
+        defer { lastFrameProcessed = now }
+        guard !isInForeground else { return }
+        if let last = lastFrameProcessed, now.timeIntervalSince(last) > 2 {
+            DiagnosticLog.shared.log(.app, String(format: "the app got CPU time again after %.1f s without processing a frame: iOS had it suspended", now.timeIntervalSince(last)))
+        }
+        if now.timeIntervalSince(lastBackgroundLog) > 15 {
+            lastBackgroundLog = now
+            DiagnosticLog.shared.log(.app, "running in the background: \(BackgroundActivity.remainingDescription)")
         }
     }
 

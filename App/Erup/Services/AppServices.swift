@@ -9,6 +9,8 @@ final class AppServices {
     private let notifications = NotificationService()
     private var alerts = AlertEngine()
     private let rides: RideRecorder
+    private let keepRunning = BackgroundKeepAlive()
+    private var defaultsObserver: NSObjectProtocol?
     private var darwinObserver: DarwinObserver?
     private var isDrainingCommands = false
     private var requestedNotificationAuthorization = false
@@ -18,9 +20,17 @@ final class AppServices {
         rides = RideRecorder(store: store, container: container)
         store.onSample = { [weak rides] sample in rides?.ingest(sample) }
         store.onBackground = { [weak rides] in rides?.persistDraftNow() }
+        store.onForeground = { [weak self] in self?.refreshKeepRunning() }
+        // The setting lives in UserDefaults, so changing it in Settings takes effect at once.
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshKeepRunning() }
+        }
         store.onRideContextInvalidated = { [weak rides] in rides?.refreshRideContext() }
         let report: @MainActor (String) -> Void = { [weak store] message in store?.report(message) }
         snapshots.onError = report
+        keepRunning.onError = report
         liveActivity.onError = report
         notifications.onError = report
 
@@ -35,7 +45,12 @@ final class AppServices {
         Task { await drainQueuedCommands() }
     }
 
+    private func refreshKeepRunning() {
+        keepRunning.update(connected: store.connection.isConnected, inForeground: store.isInForeground)
+    }
+
     private func handle(_ snapshot: ScooterSnapshot) {
+        keepRunning.update(connected: snapshot.isConnected, inForeground: store.isInForeground)
         rides.connectionChanged(snapshot.isConnected)
         snapshots.handle(snapshot)
         Task { await liveActivity.handle(snapshot) }

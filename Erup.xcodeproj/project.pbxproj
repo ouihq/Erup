@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		06EE6AEF0EF9EE17094C20E3 /* BackgroundKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6791971043DC086E6C4A934C /* BackgroundKeepAlive.swift */; };
 		081C837A404F8414112F1285 /* ScooterStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39669E1FB3FEEC50CC6592FB /* ScooterStoreTests.swift */; };
 		0ED70352450DD5C91A6F02D5 /* RideStatisticsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45681C3C668353A0199FC119 /* RideStatisticsCard.swift */; };
 		13296BB30E3C77055D1C086D /* LiveCharts.swift in Sources */ = {isa = PBXBuildFile; fileRef = C02721160A228B5072ACFE84 /* LiveCharts.swift */; };
@@ -157,6 +158,7 @@
 		64433E5C0581D927406DBC43 /* Ride.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ride.swift; sourceTree = "<group>"; };
 		64758592FE3C5C4683436F18 /* Erup.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Erup.entitlements; sourceTree = "<group>"; };
 		65484E7BB3EF005C15902584 /* TrackRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackRecorder.swift; sourceTree = "<group>"; };
+		6791971043DC086E6C4A934C /* BackgroundKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAlive.swift; sourceTree = "<group>"; };
 		67D009A8BB98A4E130529E56 /* PairingStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingStorage.swift; sourceTree = "<group>"; };
 		682105809C1EAB5773B5AE8C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6AEFD1AAFA11DFD8BDC06013 /* StorageMaintenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageMaintenance.swift; sourceTree = "<group>"; };
@@ -300,6 +302,7 @@
 				A202C53DCB56237468E0F294 /* ActivityUpdatePolicy.swift */,
 				F162772060832E9F74600BB4 /* AlertEngine.swift */,
 				B0803EC1E4FBA3039288E9B3 /* AppServices.swift */,
+				6791971043DC086E6C4A934C /* BackgroundKeepAlive.swift */,
 				C61FF9FC5426E694E04146DD /* LiveActivityController.swift */,
 				6345C9686E83DC8B6F8A147A /* NotificationService.swift */,
 				159ADDC9966C416F08A0AFED /* SnapshotWriter.swift */,
@@ -574,6 +577,7 @@
 				741253A14519A8CBE61529D1 /* AppServices.swift in Sources */,
 				E0C4A03DA059B1E7E6B40EC7 /* AppVersion.swift in Sources */,
 				B6FEB470E13EAF68ECB76ABE /* Appearance.swift in Sources */,
+				06EE6AEF0EF9EE17094C20E3 /* BackgroundKeepAlive.swift in Sources */,
 				42DEFD18D04556EDDDFE0A2C /* BatteryView.swift in Sources */,
 				9B83F477DDFD6C1CBD328394 /* BridgeLease.swift in Sources */,
 				1AE7F392046878715817670D /* ConnectionBadge.swift in Sources */,
