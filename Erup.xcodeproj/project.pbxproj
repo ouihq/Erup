@@ -30,6 +30,7 @@
 		5BE56D6BBA87D6D773927C0F /* WidgetFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61AB50697416A2EF19521FD4 /* WidgetFormatting.swift */; };
 		5E8B56FFBF1DA34E951DE094 /* ScooterControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 812E7C4631FD24C85BE14299 /* ScooterControls.swift */; };
 		620BDD8BC006145AB8E728C9 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6345C9686E83DC8B6F8A147A /* NotificationService.swift */; };
+		652148145D6524DAD20EE465 /* StreamStallPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11D565BE89CF8C7E6BB09CAF /* StreamStallPolicy.swift */; };
 		6B91FB52D60448F9C522CB8E /* ScooterProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 21E49C95198B6DAE881482B7 /* ScooterProtocol */; };
 		6E7202CB08BACC2883B416E3 /* BridgeAndForegroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6A7825A29CE4A7E5A3BBEE3 /* BridgeAndForegroundTests.swift */; };
 		741253A14519A8CBE61529D1 /* AppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0803EC1E4FBA3039288E9B3 /* AppServices.swift */; };
@@ -119,6 +120,7 @@
 		085405BBFC5F89E43232FFDA /* Erup.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Erup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0A5C8E25901B911EBE0B67AA /* ScooterIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterIntents.swift; sourceTree = "<group>"; };
 		0B5A26856E7B1AD588FAFD87 /* PackedData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackedData.swift; sourceTree = "<group>"; };
+		11D565BE89CF8C7E6BB09CAF /* StreamStallPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamStallPolicy.swift; sourceTree = "<group>"; };
 		1403073A6AAE72D829871C3D /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
 		159ADDC9966C416F08A0AFED /* SnapshotWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotWriter.swift; sourceTree = "<group>"; };
 		2609982F2FD3403EE9188AC8 /* ConnectionTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionTypes.swift; sourceTree = "<group>"; };
@@ -304,6 +306,7 @@
 				2609982F2FD3403EE9188AC8 /* ConnectionTypes.swift */,
 				67D009A8BB98A4E130529E56 /* PairingStorage.swift */,
 				4A08322EDDF0C8DA55C82753 /* ScooterConnection.swift */,
+				11D565BE89CF8C7E6BB09CAF /* StreamStallPolicy.swift */,
 			);
 			path = Connection;
 			sourceTree = "<group>";
@@ -604,6 +607,7 @@
 				EDF074C2FEA751322C8401E0 /* SettingsView.swift in Sources */,
 				D7A5BBE0A5B4D887282519E7 /* SnapshotWriter.swift in Sources */,
 				99A233F06A37D47F68430B64 /* StorageMaintenance.swift in Sources */,
+				652148145D6524DAD20EE465 /* StreamStallPolicy.swift in Sources */,
 				92E5B4589527874A701A74EA /* TrackRecorder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

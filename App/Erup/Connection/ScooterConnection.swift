@@ -102,6 +102,7 @@ actor ScooterConnection: ScooterLink {
     private static let maximumBackoffSeconds = 30
     private static let bridgeWaitPolls = 20
     private static let bridgeWatchdogTimeout: Duration = .seconds(15)
+    private static let bridgeStaleAfter: Duration = .seconds(10)
 
     private let emitter: AsyncStream<LinkEvent>.Continuation
     private let cbStream: AsyncStream<CBEvent>
@@ -127,6 +128,10 @@ actor ScooterConnection: ScooterLink {
     private var bridgeLease = BridgeLease()
     private var bridgeActive: Bool { bridgeLease.isActive }
     private var bridgeWatchdog: Task<Void, Never>?
+    private var bridgeStartedAt: ContinuousClock.Instant?
+    private var lastFrameAt: ContinuousClock.Instant?
+    private var lastStallAction: ContinuousClock.Instant?
+    private var stallPolicy = StreamStallPolicy()
     private var bridgeBacklog: [BridgeEvent] = []
     private var telemetryFrameCount = 0
     private var lastKeepAlive: ContinuousClock.Instant?
@@ -310,6 +315,7 @@ actor ScooterConnection: ScooterLink {
         }
         guard sessionActive else { throw LinkFailure.notConnected }
         guard let owner = bridgeLease.acquire() else { throw LinkFailure.busy }
+        bridgeStartedAt = .now
         bridgeDecoder.reset()
         bridgeBacklog.removeAll()
         // iOS can suspend the app in the middle of an exchange. Without this the bridge would stay open after
@@ -327,6 +333,7 @@ actor ScooterConnection: ScooterLink {
     /// close a newer exchange.
     private func leaveBridge(owner: UUID? = nil) {
         guard bridgeLease.release(owner: owner) else { return }
+        bridgeStartedAt = nil
         bridgeWatchdog?.cancel()
         bridgeWatchdog = nil
         bridgeBacklog.removeAll()
@@ -427,6 +434,7 @@ actor ScooterConnection: ScooterLink {
             bridgeBacklog.append(contentsOf: bridgeDecoder.feed(bytes))
         case GATT.dataNotify:
             for event in decoder.feed(bytes) {
+                lastFrameAt = .now
                 emitter.yield(.telemetry(event))
                 if case .telemetry1 = event { noteTelemetryFrame() }
             }
@@ -566,6 +574,9 @@ actor ScooterConnection: ScooterLink {
         receivedTelemetry = false
         telemetryFrameCount = 0
         lastKeepAlive = nil
+        lastFrameAt = nil
+        lastStallAction = nil
+        stallPolicy.reset()
         decoder.reset()
         writeQueue.enqueue(.init(channel: .data, bytes: SessionFrames.start))
         flushWrites()
@@ -586,15 +597,22 @@ actor ScooterConnection: ScooterLink {
         bridgeWatchdog?.cancel()
         bridgeWatchdog = nil
         bridgeLease.release()
+        bridgeStartedAt = nil
+        lastFrameAt = nil
+        stallPolicy.reset()
         bridgeBacklog.removeAll()
         bridgeDecoder.reset()
     }
 
     private func noteTelemetryFrame() {
+        stallPolicy.reset()
         if !receivedTelemetry {
             receivedTelemetry = true
             reconnectAttempt = 0
             silenceTask?.cancel()
+            setState(.connected)
+        } else if state != .connected {
+            // The stream came back after a stall that had been shown as a lost connection.
             setState(.connected)
         }
         telemetryFrameCount += 1
@@ -607,9 +625,43 @@ actor ScooterConnection: ScooterLink {
         while !Task.isCancelled {
             do { try await Task.sleep(for: SessionFrames.keepAliveInterval) } catch { return }
             let now = ContinuousClock.now
+            checkForStall()
             if let lastKeepAlive, now - lastKeepAlive < SessionFrames.keepAliveInterval { continue }
             sendKeepAlive()
         }
+    }
+
+    /// The scooter ends its stream when keep-alives stop, for example while iOS had the app suspended, and it
+    /// does not disconnect. Notice the silence, restart the stream, and fall back to a full reconnect.
+    private func checkForStall() {
+        guard sessionActive, receivedTelemetry, let lastFrameAt else { return }
+        let now = ContinuousClock.now
+        if bridgeActive {
+            // An exchange the app was suspended in the middle of would otherwise swallow telemetry for good.
+            if let started = bridgeStartedAt, now - started > Self.bridgeStaleAfter { leaveBridge() }
+            return
+        }
+        let silentFor = now - lastFrameAt
+        if stallPolicy.showsAsSilent(silentFor: silentFor), state == .connected { setState(.searching(.silent)) }
+        switch stallPolicy.evaluate(silentFor: silentFor, sinceLastAction: lastStallAction.map { now - $0 }) {
+        case .none:
+            return
+        case .restartSession:
+            lastStallAction = now
+            sendNow(SessionFrames.start)
+            lastKeepAlive = nil
+            sendKeepAlive()
+        case .reconnect:
+            lastStallAction = now
+            if let peripheral { central?.cancelPeripheralConnection(peripheral) }
+        }
+    }
+
+    /// Called when the app returns to the foreground: clear an exchange that was left open and check the stream now.
+    func resumeAfterBackground() {
+        guard sessionActive else { return }
+        if bridgeActive, let started = bridgeStartedAt, ContinuousClock.now - started > .seconds(3) { leaveBridge() }
+        checkForStall()
     }
 
     private func sendKeepAlive() {

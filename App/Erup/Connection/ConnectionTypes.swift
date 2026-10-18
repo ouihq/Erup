@@ -98,8 +98,14 @@ protocol ScooterLink: Sendable {
     func forget() async
     func write(_ frame: [UInt8]) async throws
     func writeCommand(_ bytes: [UInt8]) async throws
+    /// The app is back in the foreground; links that can stall in the background re-check their stream.
+    func resumeAfterBackground() async
     func readControllerInfo() async throws -> ControllerReadout
     /// Reads the controller's control word and, when `set` is given, changes only the lock bit and reads it back.
     /// The scooter's regular telemetry does not show the lock bit; this is the only way to know the lock state.
     func lockControlWord(setLockBit set: Bool?) async throws -> UInt16
+}
+
+extension ScooterLink {
+    func resumeAfterBackground() async {}
 }

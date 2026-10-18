@@ -73,3 +73,62 @@ final class ForegroundRefreshTests: XCTestCase {
         XCTAssertEqual(reads, 0)
     }
 }
+
+final class StreamStallPolicyTests: XCTestCase {
+    func testNothingHappensWhileFramesKeepArriving() {
+        var policy = StreamStallPolicy()
+        XCTAssertEqual(policy.evaluate(silentFor: .milliseconds(300), sinceLastAction: nil), .none)
+        XCTAssertEqual(policy.evaluate(silentFor: .milliseconds(4900), sinceLastAction: nil), .none)
+    }
+
+    func testRestartsTheStreamThreeTimesThenReconnectsOnce() {
+        var policy = StreamStallPolicy()
+        var actions: [StreamStallPolicy.Action] = []
+        for _ in 0..<6 {
+            actions.append(policy.evaluate(silentFor: .seconds(5), sinceLastAction: nil))
+        }
+        XCTAssertEqual(actions, [.restartSession, .restartSession, .restartSession, .reconnect, .none, .none])
+    }
+
+    func testActionsAreSpacedOut() {
+        var policy = StreamStallPolicy()
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(6), sinceLastAction: nil), .restartSession)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(6), sinceLastAction: .milliseconds(300)), .none,
+                       "a restart needs a moment to produce a frame before trying again")
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(8), sinceLastAction: .seconds(2)), .restartSession)
+    }
+
+    func testRecoveryStartsOverAfterFramesReturn() {
+        var policy = StreamStallPolicy()
+        _ = policy.evaluate(silentFor: .seconds(6), sinceLastAction: nil)
+        policy.reset()
+        XCTAssertEqual(policy.attempts, 0)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(6), sinceLastAction: nil), .restartSession)
+    }
+
+    func testAStalledLinkIsShownAsLostAfterTenSeconds() {
+        let policy = StreamStallPolicy()
+        XCTAssertFalse(policy.showsAsSilent(silentFor: .seconds(9)))
+        XCTAssertTrue(policy.showsAsSilent(silentFor: .seconds(10)))
+    }
+}
+
+@MainActor
+final class BackgroundBridgeGatingTests: XCTestCase {
+    func testLockStateIsNotReadWhileTheAppIsInTheBackground() async throws {
+        let mock = MockScooter(behavior: .init(confirmsWrites: true, simulatesRide: false))
+        let store = ScooterStore(link: mock)
+        store.isInForeground = false
+        await store.start()
+
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !store.isReady {
+            if ContinuousClock.now > deadline { return XCTFail("store never became ready") }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try await Task.sleep(for: .milliseconds(1000))
+
+        let reads = await mock.controlWordReads
+        XCTAssertEqual(reads, 0, "a bridge exchange in the background can be suspended halfway and swallow telemetry")
+    }
+}

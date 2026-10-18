@@ -35,6 +35,7 @@ struct RootView: View {
         .safeAreaInset(edge: .top) { AlertBanner() }
         .animation(.default, value: store.alertMessage)
         .onChange(of: scenePhase) { _, phase in
+            store.isInForeground = phase == .active
             if phase == .active { store.refreshAfterForeground() }
         }
     }

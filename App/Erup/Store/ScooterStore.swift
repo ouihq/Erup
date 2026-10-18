@@ -107,6 +107,9 @@ final class ScooterStore {
     /// but not the lock and cruise bits, so those two come from here.
     private(set) var controlWord: UInt16?
     @ObservationIgnored private var isReadingControlWord = false
+    /// Bridge exchanges pause telemetry, and iOS can suspend the app in the middle of one, so the lock state
+    /// is only read while the app is on screen.
+    @ObservationIgnored var isInForeground = true
     @ObservationIgnored private var controlWordAttempts = 0
     @ObservationIgnored private var alertTask: Task<Void, Never>?
     @ObservationIgnored var onSample: (@MainActor (TelemetrySample) -> Void)?
@@ -418,7 +421,7 @@ final class ScooterStore {
 
     /// Reads the real lock and cruise state once per connection while the scooter stands still.
     private func refreshControlWordIfNeeded(speedKmh: Double, force: Bool = false) {
-        guard force || (controlWord == nil && controlWordAttempts < 3), !isReadingControlWord,
+        guard isInForeground, force || (controlWord == nil && controlWordAttempts < 3), !isReadingControlWord,
               speedKmh <= ControlFrame.standstillThresholdKmh, pendingChanges.isEmpty else { return }
         isReadingControlWord = true
         if !force { controlWordAttempts += 1 }
@@ -434,6 +437,7 @@ final class ScooterStore {
     /// The lock and cruise bits are read once per connection, so after the app was in the background they
     /// can be stale. Read them again when the app comes back, while the scooter stands still.
     func refreshAfterForeground() {
+        Task { await link.resumeAfterBackground() }
         guard connection.isConnected, let telemetry1 = latestTelemetry1, let telemetry2 else { return }
         refreshControlWordIfNeeded(speedKmh: telemetry1.speedKmh(scaled: telemetry2.speedScalingFlag), force: true)
     }
