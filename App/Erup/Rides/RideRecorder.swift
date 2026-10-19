@@ -23,7 +23,7 @@ final class RideRecorder {
     private let store: ScooterStore
     private let context: ModelContext
     private let track = TrackRecorder()
-    private var detector = RideDetector()
+    private var detector = RideDetector(configuration: RideSettings.detectorConfiguration)
     private var finishTask: Task<Void, Never>?
     private var wasConnected = false
     private var live: LiveRide?
@@ -35,6 +35,11 @@ final class RideRecorder {
         context = container.mainContext
         track.onError = { [weak store] message in store?.report(message) }
         refreshRideContext()
+    }
+
+    /// Picks up a changed ride setting. It applies from the next reading, even to a ride in progress.
+    func applySettings() {
+        detector.update(configuration: RideSettings.detectorConfiguration)
     }
 
     func ingest(_ sample: TelemetrySample) {
@@ -109,7 +114,7 @@ final class RideRecorder {
         var latest = FetchDescriptor<Ride>(sortBy: [SortDescriptor(\.endedAt, order: .reverse)])
         latest.fetchLimit = 1
         let target: LiveRide
-        if let previous = try context.fetch(latest).first, current.shouldMerge(after: try previous.summary()) {
+        if let previous = try context.fetch(latest).first, current.shouldMerge(after: try previous.summary(), within: RideSettings.joinWithin) {
             target = LiveRide(ride: previous, base: try previous.summary(), baseTrack: try previous.decodedTrack())
             DiagnosticLog.shared.log(.ride, "ride in progress continues the previous ride (stopped \(Int(current.startedAt.timeIntervalSince(previous.endedAt))) s ago)")
         } else {
@@ -169,7 +174,7 @@ final class RideRecorder {
     private func storeFinished(_ summary: RideSummary, track: [TrackPoint]) throws {
         var latest = FetchDescriptor<Ride>(sortBy: [SortDescriptor(\.endedAt, order: .reverse)])
         latest.fetchLimit = 1
-        if let previous = try context.fetch(latest).first, summary.shouldMerge(after: try previous.summary()) {
+        if let previous = try context.fetch(latest).first, summary.shouldMerge(after: try previous.summary(), within: RideSettings.joinWithin) {
             try previous.absorb(summary, track: track)
         } else {
             context.insert(try Ride.make(from: summary, track: track))

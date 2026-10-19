@@ -25,7 +25,10 @@ final class AppServices {
         defaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refreshKeepRunning() }
+            Task { @MainActor in
+                self?.refreshKeepRunning()
+                self?.rides.applySettings()
+            }
         }
         store.onRideContextInvalidated = { [weak rides] in rides?.refreshRideContext() }
         let report: @MainActor (String) -> Void = { [weak store] message in store?.report(message) }

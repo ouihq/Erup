@@ -40,9 +40,6 @@ struct StreamStallPolicy: Equatable {
         case reconnect
     }
 
-    /// How long the quiet step gets to work before falling back to a reconnect.
-    static let quietStepGrace: Duration = .seconds(2)
-
     /// Without a telemetry frame for this long the stream counts as stalled.
     static let quietThreshold: Duration = .seconds(4)
     /// After a bridge exchange the stream is expected back almost at once. In the log it either resumed within a
@@ -65,8 +62,9 @@ struct StreamStallPolicy: Equatable {
         silentFor >= Self.threshold(afterBridge: afterBridge)
     }
 
-    /// First the quiet step, then at most one reconnect per stall.
-    mutating func evaluate(silentFor: Duration, afterBridge: Bool = false) -> Action {
+    /// First the quiet step, then (unless the rider chose never to) at most one reconnect per stall. How long the quiet
+    /// step gets before the reconnect is the rider's choice.
+    mutating func evaluate(silentFor: Duration, afterBridge: Bool = false, recovery: StallRecovery = .quick) -> Action {
         let threshold = Self.threshold(afterBridge: afterBridge)
         switch stage {
         case 0:
@@ -74,7 +72,7 @@ struct StreamStallPolicy: Equatable {
             stage = 1
             return .sendKeepAlives
         case 1:
-            guard silentFor >= threshold + Self.quietStepGrace else { return .none }
+            guard let grace = recovery.reconnectGrace, silentFor >= threshold + grace else { return .none }
             stage = 2
             return .reconnect
         default:

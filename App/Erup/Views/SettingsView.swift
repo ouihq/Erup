@@ -6,7 +6,8 @@ struct SettingsView: View {
     @AppStorage("useMiles") private var useMiles = false
     @AppStorage(AppearanceSetting.storageKey) private var appearance = AppearanceSetting.system
     @AppStorage(RideRecorder.gpsKey) private var recordsGPS = false
-    @AppStorage(BackgroundKeepAlive.storageKey) private var keepRunning = BackgroundKeepAlive.defaultEnabled
+    @AppStorage(RideSettings.joinWithinKey) private var joinMinutes = RideSettings.defaultJoinMinutes
+    @AppStorage(RideSettings.endAfterStandingKey) private var standingMinutes = RideSettings.defaultStandingMinutes
 
     var body: some View {
         Form {
@@ -31,6 +32,11 @@ struct SettingsView: View {
                     SettingsLabel(title: "Units", symbol: "ruler.fill", tint: .gray)
                 }
                 NavigationLink {
+                    ConnectionSettingsView()
+                } label: {
+                    SettingsLabel(title: "Connection", symbol: "antenna.radiowaves.left.and.right", tint: .green)
+                }
+                NavigationLink {
                     NotificationCenterView()
                 } label: {
                     HStack {
@@ -49,8 +55,15 @@ struct SettingsView: View {
                 Toggle(isOn: $recordsGPS) {
                     SettingsLabel(title: "Record routes", symbol: "location.fill")
                 }
-                Toggle(isOn: $keepRunning) {
-                    SettingsLabel(title: "Stay connected with the screen off", symbol: "antenna.radiowaves.left.and.right", tint: .green)
+                Picker(selection: $joinMinutes) {
+                    ForEach(RideSettings.joinOptions, id: \.self) { Text($0 == 0 ? "Off" : "\($0) min").tag($0) }
+                } label: {
+                    SettingsLabel(title: "Join rides within", symbol: "arrow.triangle.merge", tint: .gray)
+                }
+                Picker(selection: $standingMinutes) {
+                    ForEach(RideSettings.standingOptions, id: \.self) { Text("\($0) min").tag($0) }
+                } label: {
+                    SettingsLabel(title: "End after standing still", symbol: "figure.stand", tint: .gray)
                 }
                 NavigationLink {
                     ServiceSettingsView()
@@ -60,7 +73,7 @@ struct SettingsView: View {
             } header: {
                 Text("Rides")
             } footer: {
-                Text("Rides are detected automatically. With routes on, the GPS track is recorded while you ride, including in the background. \"Stay connected with the screen off\" keeps Erup running while the scooter is connected, so speed, rides and keep-alives do not stop when the phone locks. It uses location (the blue indicator shows) and more battery; iOS otherwise suspends the app within seconds.")
+                Text("Rides are detected automatically. With routes on, the GPS track is recorded while you ride, including in the background. A ride that starts within the joining time after the last one ended continues it, for example after a short stop; standing still for the chosen time ends a ride. Both apply from the next reading.")
             }
 
             Section {

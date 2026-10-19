@@ -716,7 +716,7 @@ actor ScooterConnection: ScooterLink {
             Self.log.log(.stream, "no frames for \(Self.seconds(silentFor)) s, showing the link as lost")
             setState(.searching(.silent))
         }
-        switch stallPolicy.evaluate(silentFor: silentFor, afterBridge: afterBridge) {
+        switch stallPolicy.evaluate(silentFor: silentFor, afterBridge: afterBridge, recovery: StallRecovery.current) {
         case .none:
             return
         case .sendKeepAlives:
