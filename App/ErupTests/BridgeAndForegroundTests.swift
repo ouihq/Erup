@@ -1,3 +1,4 @@
+import ScooterAnalytics
 import XCTest
 @testable import Erup
 
@@ -228,5 +229,124 @@ final class KeepRunningDefaultTests: XCTestCase {
 
         UserDefaults.standard.set(true, forKey: key)
         XCTAssertTrue(BackgroundKeepAlive.isEnabled)
+    }
+}
+
+/// Restores a UserDefaults value after a test, so the tests never change what the rider chose.
+private func withStored<T>(_ key: String, _ body: () throws -> T) rethrows -> T {
+    let previous = UserDefaults.standard.object(forKey: key)
+    defer {
+        if let previous { UserDefaults.standard.set(previous, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+    }
+    return try body()
+}
+
+final class StallRecoveryTests: XCTestCase {
+    func testTheDefaultIsTheBehaviourErupAlwaysHad() {
+        withStored(StallRecovery.storageKey) {
+            UserDefaults.standard.removeObject(forKey: StallRecovery.storageKey)
+            XCTAssertEqual(StallRecovery.current, .quick)
+        }
+    }
+
+    func testAChosenModeIsRead() {
+        withStored(StallRecovery.storageKey) {
+            UserDefaults.standard.set(StallRecovery.patient.rawValue, forKey: StallRecovery.storageKey)
+            XCTAssertEqual(StallRecovery.current, .patient)
+            UserDefaults.standard.set(StallRecovery.never.rawValue, forKey: StallRecovery.storageKey)
+            XCTAssertEqual(StallRecovery.current, .never)
+        }
+    }
+
+    func testAnUnknownStoredValueFallsBackToTheDefault() {
+        withStored(StallRecovery.storageKey) {
+            UserDefaults.standard.set("something from a newer version", forKey: StallRecovery.storageKey)
+            XCTAssertEqual(StallRecovery.current, .quick)
+        }
+    }
+
+    func testEveryModeHasAnExplanationForTheSettingsScreen() {
+        for mode in StallRecovery.allCases {
+            XCTAssertFalse(mode.title.isEmpty)
+            XCTAssertFalse(mode.explanation.isEmpty)
+        }
+    }
+
+    func testQuickReconnectsAfterAboutSixSeconds() {
+        var policy = StreamStallPolicy()
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(4), recovery: .quick), .sendKeepAlives)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(5), recovery: .quick), .none)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(6), recovery: .quick), .reconnect)
+    }
+
+    func testPatientWaitsAboutFifteenSecondsBeforeReconnecting() {
+        var policy = StreamStallPolicy()
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(4), recovery: .patient), .sendKeepAlives)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(10), recovery: .patient), .none)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(14), recovery: .patient), .none)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(15), recovery: .patient), .reconnect)
+    }
+
+    func testNeverNeverDropsTheLinkItselfButStillTriesTheKeepAliveBurst() {
+        var policy = StreamStallPolicy()
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(4), recovery: .never), .sendKeepAlives)
+        for seconds in [6, 15, 60, 600] {
+            XCTAssertEqual(policy.evaluate(silentFor: .seconds(seconds), recovery: .never), .none)
+        }
+    }
+
+    func testChangingTheModeDuringAStallTakesEffectAtOnce() {
+        var policy = StreamStallPolicy()
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(4), recovery: .never), .sendKeepAlives)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(7), recovery: .never), .none)
+        XCTAssertEqual(policy.evaluate(silentFor: .seconds(7), recovery: .quick), .reconnect, "switching to quick reconnects now")
+    }
+}
+
+final class RideSettingsTests: XCTestCase {
+    func testTheDefaultsAreWhatErupAlwaysDid() {
+        withStored(RideSettings.joinWithinKey) {
+            withStored(RideSettings.endAfterStandingKey) {
+                UserDefaults.standard.removeObject(forKey: RideSettings.joinWithinKey)
+                UserDefaults.standard.removeObject(forKey: RideSettings.endAfterStandingKey)
+                XCTAssertEqual(RideSettings.joinWithin, 300)
+                XCTAssertEqual(RideSettings.endAfterStanding, 120)
+                XCTAssertEqual(RideSettings.detectorConfiguration.stationaryTimeout, 120)
+            }
+        }
+    }
+
+    func testChosenValuesReachTheRideDetector() {
+        withStored(RideSettings.joinWithinKey) {
+            withStored(RideSettings.endAfterStandingKey) {
+                UserDefaults.standard.set(10, forKey: RideSettings.joinWithinKey)
+                UserDefaults.standard.set(5, forKey: RideSettings.endAfterStandingKey)
+                XCTAssertEqual(RideSettings.joinWithin, 600)
+                XCTAssertEqual(RideSettings.detectorConfiguration.stationaryTimeout, 300)
+            }
+        }
+    }
+
+    func testJoiningCanBeTurnedOff() {
+        withStored(RideSettings.joinWithinKey) {
+            UserDefaults.standard.set(0, forKey: RideSettings.joinWithinKey)
+            XCTAssertEqual(RideSettings.joinWithin, 0)
+        }
+    }
+
+    func testAValueThatIsNotOneOfTheChoicesFallsBackToTheDefault() {
+        withStored(RideSettings.joinWithinKey) {
+            withStored(RideSettings.endAfterStandingKey) {
+                UserDefaults.standard.set(999, forKey: RideSettings.joinWithinKey)
+                UserDefaults.standard.set(-4, forKey: RideSettings.endAfterStandingKey)
+                XCTAssertEqual(RideSettings.joinWithin, 300)
+                XCTAssertEqual(RideSettings.endAfterStanding, 120)
+            }
+        }
+    }
+
+    func testEveryChoiceIsAnAllowedValue() {
+        XCTAssertTrue(RideSettings.joinOptions.contains(RideSettings.defaultJoinMinutes))
+        XCTAssertTrue(RideSettings.standingOptions.contains(RideSettings.defaultStandingMinutes))
     }
 }

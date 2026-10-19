@@ -260,3 +260,268 @@ final class RideGapTests: XCTestCase {
         XCTAssertEqual(started.count, 2)
     }
 }
+
+final class RegenDetectionTests: XCTestCase {
+    func testBrakingWhileRollingIsRegeneration() {
+        XCTAssertTrue(RegenDetection.isRegen(powerWatts: -100, speedKmh: 15))
+        XCTAssertEqual(RegenDetection.recoveredWatts(powerWatts: -100, speedKmh: 15), 100)
+    }
+
+    func testNoiseAndStandstillAreNot() {
+        XCTAssertFalse(RegenDetection.isRegen(powerWatts: -4, speedKmh: 15), "about +-4 W is what the controller reports at idle")
+        XCTAssertFalse(RegenDetection.isRegen(powerWatts: -100, speedKmh: 1.5), "a lock holding the motor is not regeneration")
+        XCTAssertFalse(RegenDetection.isRegen(powerWatts: 200, speedKmh: 20), "driving the motor is not regeneration")
+        XCTAssertEqual(RegenDetection.recoveredWatts(powerWatts: -4, speedKmh: 15), 0)
+    }
+
+    func testTheThresholdsAreTheOnesTheDashboardShows() {
+        XCTAssertEqual(RegenDetection.minimumSpeedKmh, 2.0)
+        XCTAssertEqual(RegenDetection.minimumWatts, 5.0)
+    }
+}
+
+final class RegenMeasurementTests: XCTestCase {
+    private let origin = Date(timeIntervalSinceReferenceDate: 8_000_000)
+
+    private func reading(_ seconds: TimeInterval, speed: Double = 20, volts: Double = 40, amps: Double = 5) -> TelemetrySample {
+        TelemetrySample(date: origin.addingTimeInterval(seconds), speedKmh: speed, voltage: volts, current: amps,
+                        batteryPercent: 80, controllerTemperature: 30, motorTemperature: 35)
+    }
+
+    private func ride(_ readings: [TelemetrySample]) -> RideSummary? {
+        var detector = RideDetector()
+        var events = readings.flatMap { detector.ingest($0) }
+        events += detector.finish()
+        return events.compactMap { if case .ended(let ride) = $0 { ride } else { nil } }.first
+    }
+
+    func testTheRecorderMeasuresRegenFromEveryReadingNotFromTheStoredSamples() throws {
+        // Five readings per second: 20 s of pushing, then 10 s braking at -200 W (40 V, -5 A), then pushing again.
+        var readings: [TelemetrySample] = []
+        var t = 0.0
+        while t < 20 { readings.append(reading(t)); t += 0.2 }
+        while t < 30 { readings.append(reading(t, amps: -5)); t += 0.2 }
+        while t < 50 { readings.append(reading(t)); t += 0.2 }
+        let summary = try XCTUnwrap(ride(readings))
+        // 200 W for about 10 s is 0.556 Wh. The first and last braking readings are half counted by the trapezoid.
+        XCTAssertEqual(try XCTUnwrap(summary.regenWh), 200.0 * 10 / 3600, accuracy: 0.03)
+    }
+
+    func testNoBrakingMeansZeroRecovered() throws {
+        let summary = try XCTUnwrap(ride((0..<200).map { reading(Double($0) * 0.2) }))
+        XCTAssertEqual(try XCTUnwrap(summary.regenWh), 0, accuracy: 0.0001)
+    }
+
+    func testNoiseAroundZeroIsNotCountedAsRecovered() throws {
+        // -0.1 A at 40 V is -4 W: the idle noise of the controller.
+        let summary = try XCTUnwrap(ride((0..<200).map { reading(Double($0) * 0.2, amps: -0.1) }))
+        XCTAssertEqual(try XCTUnwrap(summary.regenWh), 0, accuracy: 0.0001)
+    }
+
+    func testAGapInTheDataAddsNoRecoveredEnergy() throws {
+        var readings = (0..<100).map { reading(Double($0) * 0.2) }
+        readings.append(reading(200, amps: -5))   // a reading far away in time
+        readings += (1..<100).map { reading(200 + Double($0) * 0.2, amps: -5) }
+        let summary = try XCTUnwrap(ride(readings))
+        XCTAssertLessThan(try XCTUnwrap(summary.regenWh), 200.0 * 20 / 3600 + 0.05, "only the 20 s actually recorded count")
+    }
+
+    func testMergedRidesAddUpTheirRecoveredEnergyAndUnknownStaysUnknown() {
+        func summary(_ start: TimeInterval, regen: Double?) -> RideSummary {
+            RideSummary(startedAt: Date(timeIntervalSinceReferenceDate: start), endedAt: Date(timeIntervalSinceReferenceDate: start + 60),
+                        distanceKm: 1, averageSpeedKmh: 20, maxSpeedKmh: 25, energyWh: 5, batteryStart: 80, batteryEnd: 79,
+                        maxControllerTemperature: 30, maxMotorTemperature: 35, internalResistanceOhm: nil, samples: [], regenWh: regen)
+        }
+        XCTAssertEqual(summary(100, regen: 1.5).merged(after: summary(0, regen: 2.0)).regenWh, 3.5)
+        XCTAssertNil(summary(100, regen: 1.5).merged(after: summary(0, regen: nil)).regenWh, "an old ride without a measurement makes the total unknown")
+    }
+}
+
+final class RideInsightsTests: XCTestCase {
+    private func sample(_ t: TimeInterval, speed: Double = 20, power: Double = 200, battery: Int = 80) -> RideSample {
+        RideSample(offset: t, speedKmh: speed, powerWatts: power, batteryPercent: battery, voltage: 40)
+    }
+
+    func testBrakingWithNegativePowerIsMarkedAsOneSegment() {
+        let samples = [sample(0), sample(1, power: -100), sample(2, power: -200), sample(3, power: -100), sample(4)]
+        XCTAssertEqual(RideInsights.regenSegments(in: samples), [RegenSegment(start: 1, end: 3)])
+    }
+
+    func testNoiseAndStandstillAreNotMarked() {
+        XCTAssertTrue(RideInsights.regenSegments(in: [sample(0), sample(1, power: -3), sample(2, power: -4), sample(3)]).isEmpty)
+        XCTAssertTrue(RideInsights.regenSegments(in: [sample(0, speed: 0, power: -50), sample(1, speed: 1, power: -50)]).isEmpty)
+    }
+
+    func testSeparateBrakingsAreSeparateSegmentsAndAGapSplitsOne() {
+        let two = [sample(0, power: -50), sample(1, power: -50), sample(2), sample(3, power: -80), sample(4, power: -80)]
+        XCTAssertEqual(RideInsights.regenSegments(in: two).count, 2)
+        let gap = [sample(0, power: -50), sample(1, power: -50), sample(20, power: -50), sample(21, power: -50)]
+        XCTAssertEqual(RideInsights.regenSegments(in: gap).count, 2, "a pause in the data is not one continuous braking")
+    }
+
+    func testASingleSampleIsMarkedForAboutOneSecond() {
+        let segments = RideInsights.regenSegments(in: [sample(0), sample(5, power: -360), sample(10)])
+        XCTAssertEqual(segments, [RegenSegment(start: 5, end: 6)])
+    }
+
+    func testTheEstimateUsesTheSameMathsAsTheRecorder() {
+        // 360 W for one second between two samples is 0.1 Wh, and the transitions are half counted.
+        let samples = [sample(0), sample(1, power: -360), sample(2, power: -360), sample(3)]
+        XCTAssertEqual(RideInsights.estimatedRegenWh(in: samples), (180 + 360 + 180) / 3600.0, accuracy: 0.0001)
+    }
+
+    func testTheEstimateIgnoresGapsAndNoise() {
+        XCTAssertEqual(RideInsights.estimatedRegenWh(in: [sample(0, power: -360), sample(100, power: -360)]), 0)
+        XCTAssertEqual(RideInsights.estimatedRegenWh(in: [sample(0, power: -3), sample(1, power: -4)]), 0)
+    }
+
+    func testTheNearestSampleToAMomentIsFound() {
+        let samples = [sample(0), sample(10), sample(20)]
+        XCTAssertEqual(RideInsights.sample(at: 4, in: samples)?.offset, 0)
+        XCTAssertEqual(RideInsights.sample(at: 6, in: samples)?.offset, 10)
+        XCTAssertEqual(RideInsights.sample(at: -5, in: samples)?.offset, 0)
+        XCTAssertEqual(RideInsights.sample(at: 99, in: samples)?.offset, 20)
+        XCTAssertNil(RideInsights.sample(at: 5, in: []))
+    }
+
+    func testTheNearestRoutePointToATimeIsFound() {
+        let origin = Date(timeIntervalSinceReferenceDate: 100)
+        let dates = [0, 5, 10].map { origin.addingTimeInterval(Double($0)) }
+        XCTAssertEqual(RideInsights.nearestIndex(to: origin.addingTimeInterval(4), in: dates), 1)
+        XCTAssertEqual(RideInsights.nearestIndex(to: origin.addingTimeInterval(-9), in: dates), 0)
+        XCTAssertEqual(RideInsights.nearestIndex(to: origin.addingTimeInterval(99), in: dates), 2)
+        XCTAssertNil(RideInsights.nearestIndex(to: origin, in: []))
+    }
+
+    func testHighlightsFindTopSpeedAndPeakPower() {
+        let samples = [sample(0, speed: 10, power: 100), sample(1, speed: 30, power: 900), sample(2, speed: 20, power: -60), sample(3, speed: 15, power: 50)]
+        let highlights = RideInsights.highlights(in: samples)
+        XCTAssertEqual(highlights.topSpeed?.offset, 1)
+        XCTAssertEqual(highlights.peakPower?.offset, 1)
+    }
+}
+
+final class SeriesDecimationTests: XCTestCase {
+    func testShortSeriesAreLeftAlone() {
+        XCTAssertEqual(SeriesDecimation.indices(of: [1, 2, 3], maximumPoints: 200), [0, 1, 2])
+    }
+
+    func testALongSeriesIsThinnedToTheLimit() {
+        let values = (0..<10_000).map { sin(Double($0) / 50) }
+        let indices = SeriesDecimation.indices(of: values, maximumPoints: 200)
+        XCTAssertLessThanOrEqual(indices.count, 202)
+        XCTAssertEqual(indices.first, 0)
+        XCTAssertEqual(indices.last, 9_999)
+        XCTAssertEqual(indices, indices.sorted())
+        XCTAssertEqual(Set(indices).count, indices.count)
+    }
+
+    func testAShortPeakSurvivesThinning() {
+        // Plain "every 50th point" would skip this one-sample spike and a one-sample dip.
+        var values = [Double](repeating: 10, count: 10_000)
+        values[4_321] = 99
+        values[7_777] = -40
+        let indices = Set(SeriesDecimation.indices(of: values, maximumPoints: 200))
+        XCTAssertTrue(indices.contains(4_321), "the top speed must stay visible")
+        XCTAssertTrue(indices.contains(7_777), "the hardest braking must stay visible")
+    }
+}
+
+final class RideCuttingSettingsTests: XCTestCase {
+    private let origin = Date(timeIntervalSinceReferenceDate: 9_500_000)
+
+    private func summary(start: TimeInterval, duration: TimeInterval = 600) -> RideSummary {
+        RideSummary(startedAt: origin.addingTimeInterval(start), endedAt: origin.addingTimeInterval(start + duration),
+                    distanceKm: 1, averageSpeedKmh: 20, maxSpeedKmh: 25, energyWh: 5, batteryStart: 80, batteryEnd: 79,
+                    maxControllerTemperature: 30, maxMotorTemperature: 35, internalResistanceOhm: nil, samples: [])
+    }
+
+    func testTheJoiningWindowIsConfigurable() {
+        let first = summary(start: 0)
+        let afterEightMinutes = summary(start: 600 + 8 * 60)
+        XCTAssertFalse(afterEightMinutes.shouldMerge(after: first), "the default window is 5 minutes")
+        XCTAssertTrue(afterEightMinutes.shouldMerge(after: first, within: 10 * 60))
+        XCTAssertFalse(afterEightMinutes.shouldMerge(after: first, within: 2 * 60))
+    }
+
+    func testAWindowOfZeroTurnsJoiningOff() {
+        let first = summary(start: 0)
+        XCTAssertFalse(summary(start: 601).shouldMerge(after: first, within: 0))
+    }
+
+    func testTheDetectorFollowsAChangedStandingTime() {
+        func sample(_ t: TimeInterval, speed: Double) -> TelemetrySample {
+            TelemetrySample(date: origin.addingTimeInterval(t), speedKmh: speed, voltage: 40, current: speed > 0 ? 5 : 0,
+                            batteryPercent: 80, controllerTemperature: 30, motorTemperature: 35)
+        }
+        var detector = RideDetector()
+        var events: [RideDetector.Event] = []
+        for t in 0..<60 { events += detector.ingest(sample(Double(t), speed: 20)) }
+        // Standing still for 90 s ends the ride only if the standing time was shortened below that.
+        var shorter = RideDetector.Configuration()
+        shorter.stationaryTimeout = 60
+        detector.update(configuration: shorter)
+        for t in 60..<160 { events += detector.ingest(sample(Double(t), speed: 0)) }
+        XCTAssertTrue(events.contains { if case .ended = $0 { true } else { false } }, "the shorter standing time ended the ride")
+        XCTAssertFalse(detector.isRiding)
+    }
+}
+
+final class RouteColoringTests: XCTestCase {
+    private let origin = Date(timeIntervalSinceReferenceDate: 9_900_000)
+
+    private func samples(speedAt: (Double) -> Double, seconds: Int = 600) -> [RideSample] {
+        (0...seconds).map { RideSample(offset: Double($0), speedKmh: speedAt(Double($0)), powerWatts: 100, batteryPercent: 80, voltage: 40) }
+    }
+
+    private func dates(count: Int, every seconds: Double = 5) -> [Date] {
+        (0..<count).map { origin.addingTimeInterval(Double($0) * seconds) }
+    }
+
+    func testEachStretchGetsTheSpeedFromItsOwnTime() {
+        // Slow for the first half of the ride, fast for the second.
+        let slowThenFast = samples(speedAt: { $0 < 300 ? 8 : 24 })
+        let segments = RouteColoring.segments(dates: dates(count: 121), startedAt: origin, samples: slowThenFast, maximumSegments: 4)
+        XCTAssertEqual(segments.map(\.speedKmh), [8, 8, 24, 24])
+    }
+
+    func testStretchesShareTheirEndPointsSoTheRouteHasNoGaps() {
+        let segments = RouteColoring.segments(dates: dates(count: 101), startedAt: origin, samples: samples(speedAt: { _ in 15 }), maximumSegments: 10)
+        XCTAssertEqual(segments.first?.first, 0)
+        XCTAssertEqual(segments.last?.last, 100)
+        for (a, b) in zip(segments, segments.dropFirst()) { XCTAssertEqual(a.last, b.first) }
+    }
+
+    func testALongRouteIsCutToTheLimit() {
+        let segments = RouteColoring.segments(dates: dates(count: 20_000, every: 0.5), startedAt: origin, samples: samples(speedAt: { _ in 15 }, seconds: 10_000), maximumSegments: 150)
+        XCTAssertLessThanOrEqual(segments.count, 150)
+        XCTAssertEqual(segments.last?.last, 19_999)
+    }
+
+    func testAShortRouteKeepsEveryPoint() {
+        let segments = RouteColoring.segments(dates: dates(count: 5), startedAt: origin, samples: samples(speedAt: { _ in 15 }), maximumSegments: 150)
+        XCTAssertEqual(segments.count, 4)
+    }
+
+    func testTooLittleDataGivesNoSegmentsInsteadOfACrash() {
+        XCTAssertTrue(RouteColoring.segments(dates: [], startedAt: origin, samples: []).isEmpty)
+        XCTAssertTrue(RouteColoring.segments(dates: dates(count: 1), startedAt: origin, samples: []).isEmpty)
+        XCTAssertEqual(RouteColoring.segments(dates: dates(count: 3), startedAt: origin, samples: []).map(\.speedKmh), [0, 0], "without samples the speed is unknown, shown as zero")
+    }
+
+    func testTheNearestRoutePointToATapIsFound() {
+        let points: [(latitude: Double, longitude: Double)] = [(52.000, 13.000), (52.001, 13.000), (52.002, 13.000)]
+        XCTAssertEqual(RouteColoring.nearestPoint(toLatitude: 52.0012, longitude: 13.0001, in: points), 1)
+        XCTAssertEqual(RouteColoring.nearestPoint(toLatitude: 51.9, longitude: 13.0, in: points), 0)
+        XCTAssertEqual(RouteColoring.nearestPoint(toLatitude: 52.5, longitude: 13.0, in: points), 2)
+        XCTAssertNil(RouteColoring.nearestPoint(toLatitude: 52, longitude: 13, in: []))
+    }
+
+    func testLongitudeDistanceShrinksTowardsThePoles() {
+        // At 60 degrees north a degree of longitude is half as long as a degree of latitude.
+        let points: [(latitude: Double, longitude: Double)] = [(60.0, 10.0), (60.0006, 10.0)]
+        // 0.0004 degrees north of the first point is closer to the second one than 0.0004 degrees east is.
+        XCTAssertEqual(RouteColoring.nearestPoint(toLatitude: 60.0004, longitude: 10.0, in: points), 1)
+        XCTAssertEqual(RouteColoring.nearestPoint(toLatitude: 60.0, longitude: 10.0006, in: points), 0, "0.0006 east is only about 0.0003 of ground")
+    }
+}

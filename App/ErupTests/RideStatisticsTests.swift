@@ -1,3 +1,5 @@
+import CoreLocation
+import MapKit
 import XCTest
 @testable import Erup
 
@@ -193,5 +195,176 @@ final class RideRecorderPersistenceTests: XCTestCase {
         for t in 8..<25 { recorder.ingest(sample(TimeInterval(t), speed: 20)) }
         recorder.persistDraftNow()
         XCTAssertEqual(try rides(container).count, 1)
+    }
+}
+
+@MainActor
+final class RideDetailModelTests: XCTestCase {
+    private func sample(_ t: TimeInterval, speed: Double = 20, power: Double = 200, battery: Int = 80, volts: Double = 40) -> RideSample {
+        RideSample(offset: t, speedKmh: speed, powerWatts: power, batteryPercent: battery, voltage: volts)
+    }
+
+    private func pack(_ samples: [RideSample]) throws -> Data { try PackedData.pack(samples) }
+
+    func testAPreparedRideHasAllFourSeriesThinnedForDrawing() throws {
+        let samples = (0..<5_000).map { sample(Double($0), power: $0 % 100 < 20 ? -80 : 150) }
+        let detail = RideDetailData.make(samplesData: try pack(samples), trackData: nil)
+
+        XCTAssertNil(detail.samplesError)
+        XCTAssertEqual(detail.series.map(\.metric), RideMetric.allCases)
+        for series in detail.series {
+            XCTAssertLessThanOrEqual(series.drawn.count, 242)
+            XCTAssertEqual(series.samples.count, 5_000, "readings at the line come from every stored sample, not the thinned ones")
+        }
+        XCTAssertFalse(detail.regen.isEmpty)
+        XCTAssertNil(detail.route)
+    }
+
+    func testAShortPeakStaysInTheDrawnPoints() throws {
+        var samples = (0..<6_000).map { sample(Double($0), speed: 18) }
+        samples[3_333] = sample(3_333, speed: 31)
+        let detail = RideDetailData.make(samplesData: try pack(samples), trackData: nil)
+        let speed = try XCTUnwrap(detail.series.first { $0.metric == .speed })
+        XCTAssertTrue(speed.drawn.contains { $0.offset == 3_333 && $0.value == 31 }, "the top speed must be on the chart")
+        XCTAssertEqual(speed.maximum, 31)
+    }
+
+    func testBrokenStoredDataGivesAnErrorInsteadOfACrash() {
+        let detail = RideDetailData.make(samplesData: Data("not a ride".utf8), trackData: Data("also broken".utf8))
+        XCTAssertNotNil(detail.samplesError)
+        XCTAssertNotNil(detail.trackError)
+        XCTAssertTrue(detail.series.isEmpty)
+        XCTAssertNil(detail.route)
+    }
+
+    func testARideWithoutSamplesHasNoCharts() throws {
+        let detail = RideDetailData.make(samplesData: try pack([]), trackData: nil)
+        XCTAssertNil(detail.samplesError)
+        XCTAssertTrue(detail.series.isEmpty)
+    }
+
+    func testASingleSampleIsNotDrawnAsAChart() throws {
+        let detail = RideDetailData.make(samplesData: try pack([sample(0)]), trackData: nil)
+        XCTAssertFalse(try XCTUnwrap(detail.series.first).isDrawable)
+    }
+
+    func testFlatDataStillGetsAUsableVerticalRange() throws {
+        // Every value identical: a range of zero height would break the chart.
+        let samples = (0..<30).map { sample(Double($0), speed: 0, power: 0, battery: 55, volts: 40.8) }
+        let detail = RideDetailData.make(samplesData: try pack(samples), trackData: nil)
+        for series in detail.series {
+            XCTAssertLessThan(series.domain.lowerBound, series.domain.upperBound, "\(series.metric.title) needs a range with height")
+        }
+    }
+
+    func testThePowerRangeReachesBelowZeroOnlyWhenEnergyCameBack() throws {
+        let pushing = RideDetailData.make(samplesData: try pack((0..<30).map { sample(Double($0), power: 150) }), trackData: nil)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(pushing.series.first { $0.metric == .power }).domain.lowerBound, 0)
+        let braking = RideDetailData.make(samplesData: try pack((0..<30).map { sample(Double($0), power: $0 < 15 ? 150 : -90) }), trackData: nil)
+        XCTAssertLessThan(try XCTUnwrap(braking.series.first { $0.metric == .power }).domain.lowerBound, 0)
+    }
+
+    func testTheRouteKeepsTheTimeOfEveryPoint() throws {
+        let origin = Date(timeIntervalSinceReferenceDate: 9_000_000)
+        let points = (0..<10).map { TrackPoint(latitude: 52 + Double($0) * 0.001, longitude: 13, timestamp: origin.addingTimeInterval(Double($0) * 5)) }
+        let detail = RideDetailData.make(samplesData: try pack([sample(0), sample(1)]), trackData: try PackedData.pack(points), startedAt: origin)
+        let route = try XCTUnwrap(detail.route)
+        XCTAssertEqual(route.coordinates.count, 10)
+        XCTAssertEqual(RideInsights.nearestIndex(to: origin.addingTimeInterval(21), in: route.dates), 4)
+    }
+
+    func testTheRouteIsColoredBySpeedAndKnowsWhereTheTopSpeedWas() throws {
+        let origin = Date(timeIntervalSinceReferenceDate: 9_100_000)
+        // 100 s ride: slow for 50 s, then fast. The route has a point every 5 s.
+        let samples = (0...100).map { sample(Double($0), speed: $0 < 50 ? 8 : 24) }
+        let points = (0...20).map { TrackPoint(latitude: 52 + Double($0) * 0.0005, longitude: 13, timestamp: origin.addingTimeInterval(Double($0) * 5)) }
+        let detail = RideDetailData.make(samplesData: try pack(samples), trackData: try PackedData.pack(points), startedAt: origin)
+        let route = try XCTUnwrap(detail.route)
+
+        XCTAssertFalse(route.segments.isEmpty)
+        XCTAssertEqual(route.segments.first?.speedKmh, 8)
+        XCTAssertEqual(route.segments.last?.speedKmh, 24)
+        XCTAssertEqual(route.maximumSpeedKmh, 24)
+        let top = try XCTUnwrap(detail.topSpeedRouteIndex)
+        XCTAssertGreaterThanOrEqual(top, 10, "the top speed was in the fast second half")
+    }
+
+    func testAMapViewAlwaysContainsTheWholeRouteWithARoomyMargin() {
+        let coordinates = [CLLocationCoordinate2D(latitude: 52.50, longitude: 13.40), CLLocationCoordinate2D(latitude: 52.52, longitude: 13.43)]
+        let rect = RouteGeometry.fittedRect(for: coordinates)
+        for coordinate in coordinates { XCTAssertTrue(rect.contains(MKMapPoint(coordinate))) }
+        let route = MKMapRect(origin: MKMapPoint(coordinates[0]), size: MKMapSize(width: 0, height: 0)).union(MKMapRect(origin: MKMapPoint(coordinates[1]), size: MKMapSize(width: 0, height: 0)))
+        XCTAssertGreaterThan(rect.width, route.width, "there is a margin around the route")
+    }
+
+    func testAVeryShortRouteStillGetsAUsableMapArea() {
+        let one = CLLocationCoordinate2D(latitude: 52.5, longitude: 13.4)
+        let rect = RouteGeometry.fittedRect(for: [one, one])
+        let metres = rect.width / MKMapPointsPerMeterAtLatitude(52.5)
+        XCTAssertGreaterThan(metres, 400, "a standing-still route is not zoomed in to a single point")
+    }
+
+    func testTappingTheMapFindsTheNearestRoutePoint() throws {
+        let origin = Date(timeIntervalSinceReferenceDate: 9_200_000)
+        let points = (0..<5).map { TrackPoint(latitude: 52 + Double($0) * 0.001, longitude: 13, timestamp: origin.addingTimeInterval(Double($0) * 5)) }
+        let detail = RideDetailData.make(samplesData: try pack([sample(0), sample(1)]), trackData: try PackedData.pack(points), startedAt: origin)
+        let route = try XCTUnwrap(detail.route)
+        XCTAssertEqual(route.nearestIndex(to: CLLocationCoordinate2D(latitude: 52.0021, longitude: 13.0003)), 2)
+    }
+
+    func testTheLineReadsTheExactStoredSampleNotAThinnedOne() throws {
+        let samples = (0..<3_000).map { sample(Double($0), speed: Double($0 % 50)) }
+        let detail = RideDetailData.make(samplesData: try pack(samples), trackData: nil)
+        let speed = try XCTUnwrap(detail.series.first { $0.metric == .speed })
+        XCTAssertEqual(speed.sample(at: 1_234)?.speedKmh, Double(1_234 % 50))
+    }
+}
+
+@MainActor
+final class RecoveredEnergyStorageTests: XCTestCase {
+    private let origin = Date(timeIntervalSinceReferenceDate: 6_000_000)
+
+    private func reading(_ seconds: TimeInterval, amps: Double, speed: Double = 20) -> TelemetrySample {
+        TelemetrySample(date: origin.addingTimeInterval(seconds), speedKmh: speed, voltage: 40, current: amps,
+                        batteryPercent: 80, controllerTemperature: 30, motorTemperature: 35)
+    }
+
+    private func makeRecorder() throws -> (RideRecorder, ModelContainer) {
+        let container = try ModelContainer(for: Ride.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let store = ScooterStore(link: MockScooter(behavior: .init(simulatesRide: false, startsPaired: false)))
+        return (RideRecorder(store: store, container: container), container)
+    }
+
+    func testTheRecoveredEnergyIsMeasuredFromEveryReadingAndStoredWithTheRide() throws {
+        let (recorder, container) = try makeRecorder()
+        // Five readings a second: 20 s pushing, 10 s braking at -200 W (40 V, -5 A), 20 s pushing, then standing still.
+        var t = 0.0
+        while t < 20 { recorder.ingest(reading(t, amps: 5)); t += 0.2 }
+        while t < 30 { recorder.ingest(reading(t, amps: -5)); t += 0.2 }
+        while t < 50 { recorder.ingest(reading(t, amps: 5)); t += 0.2 }
+        while t < 200 { recorder.ingest(reading(t, amps: 0, speed: 0)); t += 1 }
+
+        let rides = try container.mainContext.fetch(FetchDescriptor<Ride>())
+        XCTAssertEqual(rides.count, 1)
+        let measured = try XCTUnwrap(rides[0].regenWh, "a ride recorded now carries its measured recovered energy")
+        XCTAssertEqual(measured, 200.0 * 10 / 3600, accuracy: 0.03)
+    }
+
+    func testARideWithoutBrakingStoresZeroNotAnUnknown() throws {
+        let (recorder, container) = try makeRecorder()
+        var t = 0.0
+        while t < 40 { recorder.ingest(reading(t, amps: 5)); t += 0.2 }
+        while t < 200 { recorder.ingest(reading(t, amps: 0, speed: 0)); t += 1 }
+        let rides = try container.mainContext.fetch(FetchDescriptor<Ride>())
+        XCTAssertEqual(try XCTUnwrap(rides.first?.regenWh), 0, accuracy: 0.0001)
+    }
+
+    func testARideRecordedBeforeItWasMeasuredHasNoStoredValue() {
+        let ride = Ride(
+            startedAt: origin, endedAt: origin.addingTimeInterval(60), distanceKm: 1, averageSpeedKmh: 20, maxSpeedKmh: 25,
+            energyWh: 5, batteryStart: 80, batteryEnd: 79, maxControllerTemperature: 30, maxMotorTemperature: 35,
+            internalResistanceOhm: nil, samplesData: Data(), trackData: nil
+        )
+        XCTAssertNil(ride.regenWh, "unknown stays unknown, so the detail labels its number as an estimate")
     }
 }
