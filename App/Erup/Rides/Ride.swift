@@ -22,6 +22,8 @@ final class Ride {
     var maxControllerTemperature: Int
     var maxMotorTemperature: Int
     var internalResistanceOhm: Double?
+    /// Energy recovered by braking, measured while riding. Nil for rides recorded before it was measured.
+    var regenWh: Double?
     @Attribute(.externalStorage) var samplesData: Data
     @Attribute(.externalStorage) var trackData: Data?
 
@@ -29,7 +31,7 @@ final class Ride {
         id: UUID = UUID(), startedAt: Date, endedAt: Date, distanceKm: Double, averageSpeedKmh: Double,
         maxSpeedKmh: Double, energyWh: Double, batteryStart: Int, batteryEnd: Int,
         maxControllerTemperature: Int, maxMotorTemperature: Int, internalResistanceOhm: Double?,
-        samplesData: Data, trackData: Data?
+        samplesData: Data, trackData: Data?, regenWh: Double? = nil
     ) {
         self.id = id
         self.startedAt = startedAt
@@ -45,6 +47,7 @@ final class Ride {
         self.internalResistanceOhm = internalResistanceOhm
         self.samplesData = samplesData
         self.trackData = trackData
+        self.regenWh = regenWh
     }
 
     static func make(from summary: RideSummary, track: [TrackPoint]) throws -> Ride {
@@ -56,7 +59,8 @@ final class Ride {
             maxMotorTemperature: summary.maxMotorTemperature,
             internalResistanceOhm: summary.internalResistanceOhm,
             samplesData: try PackedData.pack(summary.samples),
-            trackData: track.isEmpty ? nil : try PackedData.pack(track)
+            trackData: track.isEmpty ? nil : try PackedData.pack(track),
+            regenWh: summary.regenWh
         )
     }
 
@@ -66,7 +70,7 @@ final class Ride {
             startedAt: startedAt, endedAt: endedAt, distanceKm: distanceKm, averageSpeedKmh: averageSpeedKmh,
             maxSpeedKmh: maxSpeedKmh, energyWh: energyWh, batteryStart: batteryStart, batteryEnd: batteryEnd,
             maxControllerTemperature: maxControllerTemperature, maxMotorTemperature: maxMotorTemperature,
-            internalResistanceOhm: internalResistanceOhm, samples: try decodedSamples()
+            internalResistanceOhm: internalResistanceOhm, samples: try decodedSamples(), regenWh: regenWh
         )
     }
 
@@ -83,6 +87,7 @@ final class Ride {
         maxControllerTemperature = summary.maxControllerTemperature
         maxMotorTemperature = summary.maxMotorTemperature
         internalResistanceOhm = summary.internalResistanceOhm
+        regenWh = summary.regenWh
         samplesData = try PackedData.pack(summary.samples)
         trackData = track.isEmpty ? nil : try PackedData.pack(track)
     }
@@ -121,15 +126,20 @@ extension Ride {
         let samples = (0..<600).map { second -> RideSample in
             let t = Double(second)
             let speed = max(0, 18 + 6 * sin(t / 40))
-            return RideSample(offset: t, speedKmh: speed, powerWatts: speed * 14, batteryPercent: 80 - second / 60, voltage: 40.5 - speed / 50)
+            let acceleration = 6.0 / 40 * cos(t / 40)   // km/h per second
+            // Pushing: power follows the speed and how hard it accelerates. Braking: energy comes back, up to about 180 W.
+            let power = acceleration >= 0 ? speed * 14 + acceleration * 300 : max(-180, acceleration * 1800)
+            return RideSample(offset: t, speedKmh: speed, powerWatts: power, batteryPercent: 80 - second / 60, voltage: 40.5 - speed / 50)
         }
         let start = Date.now.addingTimeInterval(-86_400)
-        let track = (0..<120).map { i in
-            TrackPoint(latitude: 52.52 + Double(i) * 0.0002, longitude: 13.405 + sin(Double(i) / 15) * 0.002, timestamp: start.addingTimeInterval(Double(i) * 5))
-        }
         for day in 0..<6 {
+            let rideStart = start.addingTimeInterval(Double(-day) * 86_400)
+            // Each route carries the timestamps of its own ride, so a moment in the charts finds its place on the map.
+            let track = (0..<120).map { i in
+                TrackPoint(latitude: 52.52 + Double(i) * 0.0002, longitude: 13.405 + sin(Double(i) / 15) * 0.002, timestamp: rideStart.addingTimeInterval(Double(i) * 5))
+            }
             let ride = Ride(
-                startedAt: start.addingTimeInterval(Double(-day) * 86_400), endedAt: start.addingTimeInterval(Double(-day) * 86_400 + 600),
+                startedAt: rideStart, endedAt: rideStart.addingTimeInterval(600),
                 distanceKm: 3 + Double(day), averageSpeedKmh: 18, maxSpeedKmh: 21, energyWh: Double(60 + day * 14),
                 batteryStart: 80, batteryEnd: 70 - day, maxControllerTemperature: 41, maxMotorTemperature: 48,
                 internalResistanceOhm: 0.18 + Double(day) * 0.004,

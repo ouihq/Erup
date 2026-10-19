@@ -167,9 +167,8 @@ final class ScooterStore {
     }
 
     /// Power flowing back into the battery right now. The controller reports it as negative current.
-    /// Only while rolling: at standstill, for example when the lock holds the motor, a small negative current is not regeneration.
-    var regenWatts: Double { speedKmh > Self.regenMinimumSpeedKmh ? max(0, -(telemetry1?.power ?? 0)) : 0 }
-    private static let regenMinimumSpeedKmh = 2.0
+    /// The same rule the ride recorder and the ride detail use, so all of them show the same numbers.
+    var regenWatts: Double { RegenDetection.recoveredWatts(powerWatts: telemetry1?.power ?? 0, speedKmh: speedKmh) }
 
     var speedKmh: Double {
         guard let telemetry1 else { return 0 }
@@ -412,8 +411,9 @@ final class ScooterStore {
     private func accumulateRegen(power: Double, speedKmh: Double) {
         let now = Date()
         defer { lastRegenDate = now }
-        guard let last = lastRegenDate, power < -1, speedKmh > Self.regenMinimumSpeedKmh else { return }
-        regenAccumulator += -power * min(now.timeIntervalSince(last), 1) / 3600
+        let recovered = RegenDetection.recoveredWatts(powerWatts: power, speedKmh: speedKmh)
+        guard let last = lastRegenDate, recovered > 0 else { return }
+        regenAccumulator += recovered * min(now.timeIntervalSince(last), 1) / 3600
     }
 
     /// Loads the AT settings once per connection, so Settings is already filled when it opens.

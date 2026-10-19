@@ -30,6 +30,8 @@ public struct RideDetector: Sendable {
         var last: TelemetrySample
         var distanceKm = 0.0
         var energyWh = 0.0
+        /// Energy that came back through regenerative braking, added up from every reading (several per second).
+        var regenWh = 0.0
         var maxSpeed: Double
         var maxController: Int
         var maxMotor: Int
@@ -59,6 +61,9 @@ public struct RideDetector: Sendable {
             if dt > 0, dt <= integrationLimit {
                 distanceKm += (sample.speedKmh + last.speedKmh) / 2 * dt / 3600
                 energyWh += (sample.powerWatts + last.powerWatts) / 2 * dt / 3600
+                let before = RegenDetection.recoveredWatts(powerWatts: last.powerWatts, speedKmh: last.speedKmh)
+                let now = RegenDetection.recoveredWatts(powerWatts: sample.powerWatts, speedKmh: sample.speedKmh)
+                regenWh += (before + now) / 2 * dt / 3600
             }
             maxSpeed = max(maxSpeed, sample.speedKmh)
             maxController = max(maxController, sample.controllerTemperature)
@@ -72,7 +77,7 @@ public struct RideDetector: Sendable {
         }
     }
 
-    private let configuration: Configuration
+    private var configuration: Configuration
     private var pending: [TelemetrySample] = []
     private var accumulator: Accumulator?
     private var sag = SagEstimator()
@@ -82,6 +87,11 @@ public struct RideDetector: Sendable {
     }
 
     public var isRiding: Bool { accumulator != nil }
+
+    /// Changes how rides are cut. A ride in progress follows the new values from its next reading.
+    public mutating func update(configuration: Configuration) {
+        self.configuration = configuration
+    }
 
     public mutating func ingest(_ sample: TelemetrySample) -> [Event] {
         var events: [Event] = []
@@ -169,7 +179,8 @@ public struct RideDetector: Sendable {
             maxControllerTemperature: ride.maxController,
             maxMotorTemperature: ride.maxMotor,
             internalResistanceOhm: sag.medianOhms,
-            samples: kept
+            samples: kept,
+            regenWh: ride.regenWh
         ))
     }
 }

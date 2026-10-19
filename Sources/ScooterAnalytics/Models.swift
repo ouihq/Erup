@@ -54,11 +54,13 @@ public struct RideSummary: Equatable, Sendable {
     public let maxMotorTemperature: Int
     public let internalResistanceOhm: Double?
     public let samples: [RideSample]
+    /// Energy recovered by braking, measured while riding. Nil for rides recorded before this was measured.
+    public let regenWh: Double?
 
     public init(
         startedAt: Date, endedAt: Date, distanceKm: Double, averageSpeedKmh: Double, maxSpeedKmh: Double,
         energyWh: Double, batteryStart: Int, batteryEnd: Int, maxControllerTemperature: Int,
-        maxMotorTemperature: Int, internalResistanceOhm: Double?, samples: [RideSample]
+        maxMotorTemperature: Int, internalResistanceOhm: Double?, samples: [RideSample], regenWh: Double? = nil
     ) {
         self.startedAt = startedAt
         self.endedAt = endedAt
@@ -72,6 +74,7 @@ public struct RideSummary: Equatable, Sendable {
         self.maxMotorTemperature = maxMotorTemperature
         self.internalResistanceOhm = internalResistanceOhm
         self.samples = samples
+        self.regenWh = regenWh
     }
 
     public var duration: TimeInterval { endedAt.timeIntervalSince(startedAt) }
@@ -82,10 +85,10 @@ public struct RideSummary: Equatable, Sendable {
     /// at a shop or a traffic light that ended the first ride.
     public static let mergeGap: TimeInterval = 5 * 60
 
-    /// True when this ride started shortly after `previous` ended.
-    public func shouldMerge(after previous: RideSummary) -> Bool {
+    /// True when this ride started shortly after `previous` ended. A `window` of zero turns joining off.
+    public func shouldMerge(after previous: RideSummary, within window: TimeInterval = RideSummary.mergeGap) -> Bool {
         let gap = startedAt.timeIntervalSince(previous.endedAt)
-        return gap >= 0 && gap <= Self.mergeGap
+        return window > 0 && gap >= 0 && gap <= window
     }
 
     /// One ride from `previous` followed by this one. Distance and energy add up, the average speed is taken
@@ -111,7 +114,9 @@ public struct RideSummary: Equatable, Sendable {
             maxControllerTemperature: max(previous.maxControllerTemperature, maxControllerTemperature),
             maxMotorTemperature: max(previous.maxMotorTemperature, maxMotorTemperature),
             internalResistanceOhm: resistances.isEmpty ? nil : resistances.reduce(0, +) / Double(resistances.count),
-            samples: previous.samples + shifted
+            samples: previous.samples + shifted,
+            // One side unknown means the total is unknown: the detail then estimates it from the samples.
+            regenWh: previous.regenWh.flatMap { earlier in regenWh.map { earlier + $0 } }
         )
     }
 }
