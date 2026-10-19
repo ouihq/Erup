@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		060E69E304AF07771CD07177 /* ConnectionSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7808D24A60A318FB6DEFA0D1 /* ConnectionSettings.swift */; };
 		06EE6AEF0EF9EE17094C20E3 /* BackgroundKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6791971043DC086E6C4A934C /* BackgroundKeepAlive.swift */; };
 		081C837A404F8414112F1285 /* ScooterStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39669E1FB3FEEC50CC6592FB /* ScooterStoreTests.swift */; };
 		0ED70352450DD5C91A6F02D5 /* RideStatisticsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45681C3C668353A0199FC119 /* RideStatisticsCard.swift */; };
@@ -44,6 +45,7 @@
 		7CA49E8026FAB8ED4096597C /* InfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A41B151AF922ED61F01E49 /* InfoView.swift */; };
 		7E6C67AFB5982900422E1933 /* SecuritySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6BFE646A2B2D047CEC2E8CF /* SecuritySettingsView.swift */; };
 		7F05EB126EBEB8583DF37606 /* RidesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80269235D8934D599508B261 /* RidesView.swift */; };
+		7FDC92CBB3C557E8A37183B7 /* RideMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8E025840265DE2C264C2BCF /* RideMapView.swift */; };
 		80EEC34EDCC45CDD6AA8F917 /* ScooterSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F1DEB964C558A20F0622048 /* ScooterSnapshot.swift */; };
 		8100ECB5275FA1C44646FE84 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D258CCB951ACD9057B4070A /* RootView.swift */; };
 		8563CFF444EBED7BBC29185C /* ScooterStatusWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E77FE13626962D5075A3E02 /* ScooterStatusWidget.swift */; };
@@ -59,6 +61,7 @@
 		9E41044097C06D27BA5921A2 /* ScooterLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262E9B8A9EEBB811339E6BA0 /* ScooterLiveActivity.swift */; };
 		9E48906FE97E7F8F6008567E /* PackedData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B5A26856E7B1AD588FAFD87 /* PackedData.swift */; };
 		A1140F012FC6D1DC5C703BB4 /* ScooterIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A5C8E25901B911EBE0B67AA /* ScooterIntents.swift */; };
+		A3D5A09251684C1BD80EFCD6 /* RideDetailModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B88794EDC21F2DDFA3A104A /* RideDetailModel.swift */; };
 		A82656C6E1A7F3367AF1368F /* ScooterActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CD1805B21FD9F100048D28D /* ScooterActivityAttributes.swift */; };
 		AD7A6893F0C69E25261AFC97 /* PairingStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D009A8BB98A4E130529E56 /* PairingStorage.swift */; };
 		ADF323C905AEA9DE929E0261 /* ScooterAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = B89DEF10B0B6A107A20A6F59 /* ScooterAnalytics */; };
@@ -70,6 +73,7 @@
 		CF8E72B1597A965951961C27 /* ServiceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A82E677CE210E3B0B18EE5 /* ServiceSettingsView.swift */; };
 		D542A1F323A9C69735002969 /* PINVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = A74EB9DAFE1AAD4CBA5AD3AF /* PINVault.swift */; };
 		D7A5BBE0A5B4D887282519E7 /* SnapshotWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 159ADDC9966C416F08A0AFED /* SnapshotWriter.swift */; };
+		DDE003822C3012349CF4A0CC /* ConnectionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66D77CD5544FC162963BA2A5 /* ConnectionSettingsView.swift */; };
 		E0C4A03DA059B1E7E6B40EC7 /* AppVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4C9BDD85147F5CCF4F22375 /* AppVersion.swift */; };
 		E1C968E08ABF9252D206E6DE /* ServicesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93F2B6FF04D3E68A58A0E71B /* ServicesTests.swift */; };
 		E424976283B38311D5E24C80 /* DebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4B263C1F847F9405B7780C /* DebugView.swift */; };
@@ -127,6 +131,7 @@
 		11D565BE89CF8C7E6BB09CAF /* StreamStallPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamStallPolicy.swift; sourceTree = "<group>"; };
 		1403073A6AAE72D829871C3D /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
 		159ADDC9966C416F08A0AFED /* SnapshotWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotWriter.swift; sourceTree = "<group>"; };
+		1B88794EDC21F2DDFA3A104A /* RideDetailModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideDetailModel.swift; sourceTree = "<group>"; };
 		2015A6EEA40A545415E1D89A /* DiagnosticReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticReport.swift; sourceTree = "<group>"; };
 		2609982F2FD3403EE9188AC8 /* ConnectionTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionTypes.swift; sourceTree = "<group>"; };
 		262E9B8A9EEBB811339E6BA0 /* ScooterLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterLiveActivity.swift; sourceTree = "<group>"; };
@@ -158,6 +163,7 @@
 		64433E5C0581D927406DBC43 /* Ride.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ride.swift; sourceTree = "<group>"; };
 		64758592FE3C5C4683436F18 /* Erup.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Erup.entitlements; sourceTree = "<group>"; };
 		65484E7BB3EF005C15902584 /* TrackRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackRecorder.swift; sourceTree = "<group>"; };
+		66D77CD5544FC162963BA2A5 /* ConnectionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSettingsView.swift; sourceTree = "<group>"; };
 		6791971043DC086E6C4A934C /* BackgroundKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAlive.swift; sourceTree = "<group>"; };
 		67D009A8BB98A4E130529E56 /* PairingStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingStorage.swift; sourceTree = "<group>"; };
 		682105809C1EAB5773B5AE8C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -165,6 +171,7 @@
 		6B7AAD8F7AA42F724227BE9B /* DiagnosticLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLog.swift; sourceTree = "<group>"; };
 		6F1DEB964C558A20F0622048 /* ScooterSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterSnapshot.swift; sourceTree = "<group>"; };
 		7033D0A2DBD67AC57EE61ABA /* AppReset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReset.swift; sourceTree = "<group>"; };
+		7808D24A60A318FB6DEFA0D1 /* ConnectionSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSettings.swift; sourceTree = "<group>"; };
 		7D235AD8C3F9DF85A3F31D47 /* ScooterCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterCommand.swift; sourceTree = "<group>"; };
 		80269235D8934D599508B261 /* RidesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RidesView.swift; sourceTree = "<group>"; };
 		812E7C4631FD24C85BE14299 /* ScooterControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterControls.swift; sourceTree = "<group>"; };
@@ -179,6 +186,7 @@
 		A2AB980AC86FCFAA142BCAE2 /* AppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppGroup.swift; sourceTree = "<group>"; };
 		A3E17F98EB2679BBAC1260BD /* Appearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Appearance.swift; sourceTree = "<group>"; };
 		A74EB9DAFE1AAD4CBA5AD3AF /* PINVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PINVault.swift; sourceTree = "<group>"; };
+		A8E025840265DE2C264C2BCF /* RideMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideMapView.swift; sourceTree = "<group>"; };
 		AF5EDBA633EF4C471013C331 /* DataExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataExporter.swift; sourceTree = "<group>"; };
 		B0803EC1E4FBA3039288E9B3 /* AppServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppServices.swift; sourceTree = "<group>"; };
 		C02721160A228B5072ACFE84 /* LiveCharts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveCharts.swift; sourceTree = "<group>"; };
@@ -239,6 +247,7 @@
 			children = (
 				7033D0A2DBD67AC57EE61ABA /* AppReset.swift */,
 				F4C9BDD85147F5CCF4F22375 /* AppVersion.swift */,
+				7808D24A60A318FB6DEFA0D1 /* ConnectionSettings.swift */,
 				AF5EDBA633EF4C471013C331 /* DataExporter.swift */,
 				6B7AAD8F7AA42F724227BE9B /* DiagnosticLog.swift */,
 				2015A6EEA40A545415E1D89A /* DiagnosticReport.swift */,
@@ -276,6 +285,7 @@
 				A3E17F98EB2679BBAC1260BD /* Appearance.swift */,
 				949CE9368BA6AD51DB936E28 /* BatteryView.swift */,
 				4D5FF8CDF3D27DDA59556310 /* ConnectionBadge.swift */,
+				66D77CD5544FC162963BA2A5 /* ConnectionSettingsView.swift */,
 				2FCEE051387EBCF524ACC4E7 /* DashboardView.swift */,
 				5669AD8337EF321F5ED0274E /* DataSettingsView.swift */,
 				5C4B263C1F847F9405B7780C /* DebugView.swift */,
@@ -284,6 +294,8 @@
 				C02721160A228B5072ACFE84 /* LiveCharts.swift */,
 				4980EBB07F539B79D0B3702F /* NotificationCenterView.swift */,
 				87089D4A497FE975EEA7FC56 /* PairingView.swift */,
+				1B88794EDC21F2DDFA3A104A /* RideDetailModel.swift */,
+				A8E025840265DE2C264C2BCF /* RideMapView.swift */,
 				45681C3C668353A0199FC119 /* RideStatisticsCard.swift */,
 				80269235D8934D599508B261 /* RidesView.swift */,
 				2D258CCB951ACD9057B4070A /* RootView.swift */,
@@ -581,6 +593,8 @@
 				42DEFD18D04556EDDDFE0A2C /* BatteryView.swift in Sources */,
 				9B83F477DDFD6C1CBD328394 /* BridgeLease.swift in Sources */,
 				1AE7F392046878715817670D /* ConnectionBadge.swift in Sources */,
+				060E69E304AF07771CD07177 /* ConnectionSettings.swift in Sources */,
+				DDE003822C3012349CF4A0CC /* ConnectionSettingsView.swift in Sources */,
 				EEAB939869031D6C028DA69F /* ConnectionTypes.swift in Sources */,
 				2CE0858044376386926AD38F /* DashboardView.swift in Sources */,
 				39BFF297617A17B58CBF911C /* DataExporter.swift in Sources */,
@@ -603,6 +617,8 @@
 				AD7A6893F0C69E25261AFC97 /* PairingStorage.swift in Sources */,
 				238F3AD55EBA674395A06CC5 /* PairingView.swift in Sources */,
 				34EAC1FB8C41753E83D3BE22 /* Ride.swift in Sources */,
+				A3D5A09251684C1BD80EFCD6 /* RideDetailModel.swift in Sources */,
+				7FDC92CBB3C557E8A37183B7 /* RideMapView.swift in Sources */,
 				14A5BFEED36901D5FDF686E8 /* RideRecorder.swift in Sources */,
 				21DC0EFC157244CB4EF3AF8C /* RideStatistics.swift in Sources */,
 				0ED70352450DD5C91A6F02D5 /* RideStatisticsCard.swift in Sources */,
@@ -696,7 +712,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 20261018.10;
+				CURRENT_PROJECT_VERSION = 20261018.11;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
@@ -710,7 +726,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.2.8;
+				MARKETING_VERSION = 1.3.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -863,7 +879,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 20261018.10;
+				CURRENT_PROJECT_VERSION = 20261018.11;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -883,7 +899,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.2.8;
+				MARKETING_VERSION = 1.3.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
