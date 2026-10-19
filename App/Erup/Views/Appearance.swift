@@ -10,6 +10,19 @@ enum Palette {
     static let temperature = Color.red
 }
 
+/// The small "Regen" tag next to a power reading while energy flows back into the battery.
+struct RegenTag: View {
+    var body: some View {
+        Text("Regen")
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Palette.battery.opacity(0.18)))
+            .foregroundStyle(Palette.battery)
+            .accessibilityLabel("Regenerative braking")
+    }
+}
+
 enum AppearanceSetting: String, CaseIterable, Identifiable {
     static let storageKey = "appearance"
 

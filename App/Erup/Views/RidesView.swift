@@ -32,7 +32,7 @@ struct RidesView: View {
                 }
             }
             ForEach(days, id: \.day) { day in
-                Section(dayTitle(day.day)) {
+                Section {
                     ForEach(day.rides) { ride in
                         NavigationLink {
                             RideDetailView(ride: ride)
@@ -41,6 +41,8 @@ struct RidesView: View {
                         }
                     }
                     .onDelete { offsets in delete(offsets.map { day.rides[$0] }) }
+                } header: {
+                    dayHeader(day.day, rides: day.rides)
                 }
             }
         }
@@ -54,6 +56,17 @@ struct RidesView: View {
             }
         }
         .navigationTitle("Rides")
+    }
+
+    private func dayHeader(_ day: Date, rides: [Ride]) -> some View {
+        let distance = rides.reduce(0) { $0 + $1.distanceKm }
+        return HStack {
+            Text(dayTitle(day))
+            Spacer()
+            Text("\(rides.count) \(rides.count == 1 ? "ride" : "rides") · \(units.distance(fromKm: distance).formatted(.number.precision(.fractionLength(1)))) \(units.distanceLabel)")
+                .font(.footnote)
+                .monospacedDigit()
+        }
     }
 
     private func dayTitle(_ day: Date) -> String {
@@ -91,13 +104,15 @@ struct RideRow: View {
                 Text("\(ride.startedAt.formatted(date: .omitted, time: .shortened)) · \(Duration.seconds(ride.duration).formatted(.time(pattern: .hourMinute))) h")
                     .font(.subheadline.weight(.medium))
                 HStack(spacing: 10) {
-                    Label("\(units.speed(fromKmh: ride.averageSpeedKmh).formatted(.number.precision(.fractionLength(0)))) \(units.speedLabel)", systemImage: "speedometer")
+                    Label("\(units.speed(fromKmh: ride.averageSpeedKmh).formatted(.number.precision(.fractionLength(0)))) \(units.speedLabel)", systemImage: "gauge.with.needle.fill")
+                        .labelStyle(CompactLabelStyle())
                     if let whPerKm = ride.whPerKm {
-                        Label("\(units.perDistance(whPerKm).formatted(.number.precision(.fractionLength(0)))) Wh/\(units.distanceLabel)", systemImage: "leaf")
+                        Label("\(units.perDistance(whPerKm).formatted(.number.precision(.fractionLength(0)))) Wh/\(units.distanceLabel)", systemImage: "bolt.fill")
+                            .labelStyle(CompactLabelStyle())
                     }
                     Label("\(ride.batteryUsed)%", systemImage: "battery.50percent")
+                        .labelStyle(CompactLabelStyle())
                 }
-                .labelStyle(CompactLabelStyle())
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -109,9 +124,11 @@ struct RideRow: View {
 }
 
 private struct CompactLabelStyle: LabelStyle {
+    var tint: Color = .secondary
+
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 3) {
-            configuration.icon.imageScale(.small)
+        HStack(spacing: 4) {
+            configuration.icon.imageScale(.small).foregroundStyle(tint)
             configuration.title
         }
     }
@@ -120,57 +137,117 @@ private struct CompactLabelStyle: LabelStyle {
 struct RideDetailView: View {
     let ride: Ride
     @AppStorage("useMiles") private var useMiles = false
-    @State private var decoded: Decoded?
-
-    private struct Decoded {
-        let samples: Result<[RideSample], Error>
-        let track: Result<[TrackPoint], Error>
-    }
+    /// Decoded and prepared off the main thread, so opening a long ride never stalls the screen.
+    @State private var detail: RideDetailData?
+    /// The moment in the ride the rider is looking at, and the chart it belongs to. Only that chart draws the line.
+    @State private var selectedOffset: TimeInterval?
+    @State private var focusedMetric: RideMetric?
+    @State private var markerIndex: Int?
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 48
 
     private var units: Units { Units(useMiles: useMiles) }
 
     var body: some View {
-        let samples = decoded?.samples ?? .success([])
-        let track = decoded?.track ?? .success([])
         ScrollView {
+            // Not lazy: a lazy stack re-measures rows as they appear, which moved the page under a finger on a chart.
             VStack(spacing: 16) {
-                if case .success(let points) = track, points.count > 1 {
-                    RouteMap(points: points)
-                        .frame(height: 260)
-                        .clipShape(RoundedRectangle(cornerRadius: 20))
-                } else if decoded != nil, case .success = track {
-                    noRouteCard
-                }
-                hero
-                details
-                switch samples {
-                case .success(let values) where !values.isEmpty:
-                    RideCharts(samples: values, units: units)
-                case .success:
-                    EmptyView()
-                case .failure(let error):
-                    Label("Charts unavailable: \(error.localizedDescription)", systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                if case .failure(let error) = track {
-                    Label("Route unavailable: \(error.localizedDescription)", systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                content
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
         }
         .background(Color(.systemGroupedBackground))
-        .task(id: ride.id) {
-            decoded = Decoded(samples: Result { try ride.decodedSamples() }, track: Result { try ride.decodedTrack() })
-        }
+        .task(id: ride.id) { await load() }
+        .onChange(of: selectedOffset) { _, offset in updateMarker(offset) }
+        .sensoryFeedback(.selection, trigger: focusedMetric)
         .navigationTitle(ride.startedAt.formatted(date: .abbreviated, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 48
+    @ViewBuilder
+    private var content: some View {
+        if let route = detail?.route {
+            RideMapView(route: route, markerIndex: markerIndex, topSpeedIndex: detail?.topSpeedRouteIndex, units: units, onSelect: selectedRoutePoint)
+                .equatable()
+                .frame(height: 300)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+        } else if let detail, detail.trackError == nil {
+            noRouteCard
+        }
+        hero
+        details
+        if let detail {
+            if let message = detail.samplesError {
+                errorLabel("Charts unavailable: \(message)")
+            } else if !detail.series.isEmpty {
+                highlights(detail)
+                charts(detail)
+            }
+            if let message = detail.trackError { errorLabel("Route unavailable: \(message)") }
+        } else {
+            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+        }
+    }
+
+    private func load() async {
+        // The model object stays on the main thread; only its stored data goes to the background.
+        let samplesData = ride.samplesData
+        let trackData = ride.trackData
+        let startedAt = ride.startedAt
+        detail = nil
+        selectedOffset = nil
+        focusedMetric = nil
+        markerIndex = nil
+        let prepared = await Task.detached(priority: .userInitiated) {
+            RideDetailData.make(samplesData: samplesData, trackData: trackData, startedAt: startedAt)
+        }.value
+        guard !Task.isCancelled else { return }
+        detail = prepared
+    }
+
+    /// A finger on a chart moves the shared moment and claims the line; lifting it lets both go.
+    private func touched(_ metric: RideMetric, _ offset: TimeInterval?) {
+        if let offset {
+            selectedOffset = offset
+            focusedMetric = metric
+        } else if focusedMetric == metric {
+            selectedOffset = nil
+            focusedMetric = nil
+        }
+    }
+
+    /// Tapping the route looks at that moment: the line appears on the speed chart.
+    private func selectedRoutePoint(_ index: Int) {
+        guard let route = detail?.route, route.dates.indices.contains(index) else { return }
+        selectedOffset = max(0, route.dates[index].timeIntervalSince(ride.startedAt))
+        focusedMetric = .speed
+    }
+
+    /// Moves the map marker only when the nearest route point actually changes, not on every touch event.
+    private func updateMarker(_ offset: TimeInterval?) {
+        guard let offset, let route = detail?.route,
+              let index = RideInsights.nearestIndex(to: ride.startedAt.addingTimeInterval(offset), in: route.dates)
+        else {
+            markerIndex = nil
+            return
+        }
+        if index != markerIndex { markerIndex = index }
+    }
+
+    // MARK: Energy recovered
+
+    /// The exact amount measured while riding, or an estimate for rides recorded before that was measured.
+    private var recovered: (wattHours: Double, isEstimate: Bool)? {
+        guard let detail else { return nil }
+        if let measured = ride.regenWh { return (measured, false) }
+        return (detail.estimatedRegenWh, true)
+    }
+
+    private func recoveredText(_ value: (wattHours: Double, isEstimate: Bool)) -> String {
+        "\(value.isEstimate ? "≈ " : "")+\(value.wattHours.formatted(.number.precision(.fractionLength(1)))) Wh"
+    }
+
+    // MARK: Cards
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -199,21 +276,98 @@ struct RideDetailView: View {
     private var details: some View {
         VStack(spacing: 0) {
             detailRow("Energy used", "\(ride.energyWh.formatted(.number.precision(.fractionLength(1)))) Wh", symbol: "bolt.fill", tint: Palette.power)
+            if let recovered, recovered.wattHours >= 0.05 {
+                Divider()
+                detailRow("Recovery", recoveredText(recovered), symbol: "leaf.arrow.circlepath", tint: Palette.battery)
+                    .accessibilityHint(recovered.isEstimate ? "Estimated from the stored one second samples" : "Measured while riding")
+            }
             Divider()
             detailRow(
                 "Consumption",
                 ride.whPerKm.map { "\(units.perDistance($0).formatted(.number.precision(.fractionLength(0)))) Wh/\(units.distanceLabel)" } ?? "–",
-                symbol: "leaf.fill", tint: Palette.battery
+                symbol: "bolt.horizontal.fill", tint: Palette.power
             )
             Divider()
             detailRow("Battery", "\(ride.batteryStart)% → \(ride.batteryEnd)%", symbol: "battery.50percent", tint: Palette.battery)
             Divider()
-            detailRow("Controller peak", "\(ride.maxControllerTemperature)°C", symbol: "thermometer.medium", tint: Palette.temperature)
+            detailRow("Controller peak", "\(ride.maxControllerTemperature)°C", symbol: "cpu.fill", tint: Palette.temperature)
             Divider()
-            detailRow("Motor peak", "\(ride.maxMotorTemperature)°C", symbol: "thermometer.high", tint: Palette.temperature)
+            detailRow("Motor peak", "\(ride.maxMotorTemperature)°C", symbol: "gearshape.2.fill", tint: Palette.temperature)
         }
         .padding(.horizontal, 14)
         .cardBackground(cornerRadius: 16)
+    }
+
+    /// Moments worth looking at. Tapping one puts the line there on its chart and the marker on the map.
+    @ViewBuilder
+    private func highlights(_ detail: RideDetailData) -> some View {
+        let top = detail.highlights.topSpeed.flatMap { $0.speedKmh > 1 ? $0 : nil }
+        let peak = detail.highlights.peakPower.flatMap { $0.powerWatts > 1 ? $0 : nil }
+        if top != nil || peak != nil {
+            VStack(spacing: 0) {
+                if let top {
+                    highlightRow("Top speed", "\(units.speed(fromKmh: top.speedKmh).formatted(.number.precision(.fractionLength(1)))) \(units.speedLabel)",
+                                 at: top.offset, metric: .speed, symbol: "speedometer", tint: Palette.speed)
+                }
+                if top != nil, peak != nil { Divider() }
+                if let peak {
+                    highlightRow("Peak power", "\(peak.powerWatts.formatted(.number.precision(.fractionLength(0)))) W",
+                                 at: peak.offset, metric: .power, symbol: "bolt.fill", tint: Palette.power)
+                }
+            }
+            .padding(.horizontal, 14)
+            .cardBackground(cornerRadius: 16)
+        }
+    }
+
+    private func highlightRow(_ title: String, _ value: String, at offset: TimeInterval, metric: RideMetric, symbol: String, tint: Color) -> some View {
+        Button {
+            selectedOffset = offset
+            focusedMetric = metric
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: symbol).foregroundStyle(tint).frame(width: 24)
+                Text(title).foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(value).fontWeight(.medium).monospacedDigit()
+                    Text("at \(RideTime.label(offset))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
+                Image(systemName: "scope").font(.footnote).foregroundStyle(.tertiary)
+            }
+            .font(.subheadline)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows this moment on its chart and on the map")
+    }
+
+    private func charts(_ detail: RideDetailData) -> some View {
+        VStack(spacing: 16) {
+            ForEach(detail.series, id: \.metric) { series in
+                RideSeriesChart(
+                    series: series,
+                    unit: unit(for: series.metric),
+                    scale: series.metric == .speed ? units.speed(fromKmh: 1) : 1,
+                    // Only the chart being touched gets the moment, so the others are not redrawn while a finger moves.
+                    selection: focusedMetric == series.metric ? selectedOffset : nil,
+                    regen: series.metric == .power ? detail.regen : [],
+                    recoveredText: series.metric == .power ? recovered.flatMap { $0.wattHours >= 0.05 ? recoveredText($0) : nil } : nil,
+                    onTouch: touched
+                )
+                .equatable()
+            }
+        }
+    }
+
+    private func unit(for metric: RideMetric) -> String {
+        switch metric {
+        case .speed: units.speedLabel
+        case .power: "W"
+        case .voltage: "V"
+        case .battery: "%"
+        }
     }
 
     private func detailRow(_ title: String, _ value: String, symbol: String, tint: Color) -> some View {
@@ -226,6 +380,12 @@ struct RideDetailView: View {
         .font(.subheadline)
         .padding(.vertical, 12)
         .accessibilityElement(children: .combine)
+    }
+
+    private func errorLabel(_ text: String) -> some View {
+        Label(text, systemImage: "exclamationmark.triangle")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
     }
 
     private var noRouteCard: some View {
@@ -245,157 +405,212 @@ struct RideDetailView: View {
     }
 }
 
-struct RouteMap: View {
-    let points: [TrackPoint]
-
-    var body: some View {
-        let coordinates = points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-        Map(initialPosition: .automatic, interactionModes: [.zoom, .pan]) {
-            MapPolyline(coordinates: coordinates)
-                .stroke(.tint, style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
-            if let first = coordinates.first {
-                Annotation("Start", coordinate: first) {
-                    Circle().fill(.green).frame(width: 14, height: 14).overlay(Circle().stroke(.white, lineWidth: 3))
-                }
-            }
-            if let last = coordinates.last {
-                Annotation("End", coordinate: last) {
-                    Circle().fill(.red).frame(width: 14, height: 14).overlay(Circle().stroke(.white, lineWidth: 3))
-                }
-            }
-        }
-        .mapStyle(.standard(elevation: .realistic))
-        .accessibilityLabel("Route map")
+enum RideTime {
+    /// "4:12" or "1:04:12", for a moment measured from the start of the ride.
+    static func label(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        return total >= 3600
+            ? String(format: "%d:%02d:%02d", total / 3600, total % 3600 / 60, total % 60)
+            : String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 
-struct RideCharts: View {
-    let samples: [RideSample]
-    let units: Units
-
-    var body: some View {
-        VStack(spacing: 16) {
-            RideSeriesChart(
-                title: "Speed", unit: units.speedLabel, tint: Palette.speed, samples: samples,
-                value: { units.speed(fromKmh: $0.speedKmh) }, floor: .zero
-            )
-            RideSeriesChart(
-                title: "Power", unit: "W", tint: Palette.power, samples: samples,
-                value: { $0.powerWatts }, floor: .zeroOrBelow
-            )
-            RideSeriesChart(
-                title: "Voltage", unit: "V", tint: Palette.voltage, samples: samples,
-                value: { $0.voltage }, floor: .fittedVoltage
-            )
-            RideSeriesChart(
-                title: "Battery", unit: "%", tint: Palette.battery, samples: samples,
-                value: { Double($0.batteryPercent) }, floor: .fitted
-            )
+extension RideMetric {
+    var tint: Color {
+        switch self {
+        case .speed: Palette.speed
+        case .power: Palette.power
+        case .voltage: Palette.voltage
+        case .battery: Palette.battery
         }
     }
 }
 
-/// One ride metric drawn like the live dashboard chart: tinted line over a soft gradient, current reading and average/max in the header.
-struct RideSeriesChart: View {
-    enum Floor {
-        case zero
-        case zeroOrBelow
-        case fitted
-        case fittedVoltage
-    }
-
-    let title: String
+/// One ride metric drawn like the live dashboard chart. Touch and drag to move a line along the ride: the line, a dot
+/// and a solid label with the reading appear on this chart only.
+///
+/// The view compares only what affects its drawing (the prepared series, units, and its own selection), so while a
+/// finger moves on one chart the other three are not redrawn.
+struct RideSeriesChart: View, Equatable {
+    let series: RideSeries
     let unit: String
-    let tint: Color
-    let samples: [RideSample]
-    let value: (RideSample) -> Double
-    let floor: Floor
+    /// Multiplies stored values for display (km/h to mph).
+    let scale: Double
+    /// The moment under the finger, only when it is on this chart.
+    let selection: TimeInterval?
+    /// Stretches where energy came back, shaded on the power chart.
+    let regen: [RegenSegment]
+    /// "+10.8 Wh" or "≈ +10.8 Wh" for the power chart.
+    let recoveredText: String?
+    let onTouch: (RideMetric, TimeInterval?) -> Void
 
-    private static let maxPoints = 200
+    nonisolated static func == (lhs: RideSeriesChart, rhs: RideSeriesChart) -> Bool {
+        lhs.series === rhs.series && lhs.unit == rhs.unit && lhs.scale == rhs.scale && lhs.selection == rhs.selection
+            && lhs.regen == rhs.regen && lhs.recoveredText == rhs.recoveredText
+    }
+
+    private var metric: RideMetric { series.metric }
+    private var tint: Color { metric.tint }
+    /// Same height whether or not a finger is down, so the plot never moves under the finger.
+    private static let headerHeight: CGFloat = 40
 
     var body: some View {
-        let points = downsampled()
-        let values = points.map(\.1)
-        let domain = yDomain(values)
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.subheadline.weight(.semibold))
-                Spacer()
-                if let maximum = values.max(), !values.isEmpty {
-                    Text("Avg \(format(values.reduce(0, +) / Double(values.count))) · Max \(format(maximum)) \(unit)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
+        let selected = selection.flatMap(series.sample(at:))
+        VStack(alignment: .leading, spacing: 8) {
+            header(selected)
+                .frame(height: Self.headerHeight, alignment: .topLeading)
+            if series.isDrawable {
+                chart(selected)
+            } else {
+                Text("Not enough data for a chart")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 150)
             }
-            Chart {
-                ForEach(points, id: \.0.offset) { sample, value in
-                    AreaMark(
-                        x: .value("Time", sample.offset),
-                        yStart: .value("Base", domain.lowerBound),
-                        yEnd: .value(title, value)
-                    )
-                    .foregroundStyle(LinearGradient(colors: [tint.opacity(0.35), tint.opacity(0.02)], startPoint: .top, endPoint: .bottom))
-                    .interpolationMethod(.monotone)
-                    LineMark(x: .value("Time", sample.offset), y: .value(title, value))
-                        .foregroundStyle(tint)
-                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                        .interpolationMethod(.monotone)
-                }
-            }
-            .chartXScale(domain: 0...max(samples.last?.offset ?? 60, 60))
-            .chartYScale(domain: domain)
-            .chartXAxis {
-                AxisMarks(values: .automatic(desiredCount: 4)) { value in
-                    AxisTick()
-                    AxisValueLabel {
-                        if let seconds = value.as(Double.self) { Text(timeLabel(seconds)) }
-                    }
-                }
-            }
-            .chartYAxis {
-                AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
-                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.gray.opacity(0.35))
-                    AxisValueLabel()
-                }
-            }
-            .chartPlotStyle { $0.clipped() }
-            .frame(height: 150)
-            .clipped()
         }
         .padding(14)
         .cardBackground(cornerRadius: 16)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title) over the ride")
+        .accessibilityLabel("\(metric.title) over the ride")
+        .accessibilityValue("Average \(format(series.average * scale)), maximum \(format(series.maximum * scale)) \(unit)")
     }
 
-    private func downsampled() -> [(RideSample, Double)] {
-        let step = max(1, samples.count / Self.maxPoints)
-        return samples.enumerated()
-            .filter { $0.offset % step == 0 || $0.offset == samples.count - 1 }
-            .map { ($0.element, value($0.element)) }
-    }
-
-    private func yDomain(_ values: [Double]) -> ClosedRange<Double> {
-        let high = values.max() ?? 0
-        let low = values.min() ?? 0
-        switch floor {
-        case .zero: return 0...max(high, 10) * 1.15
-        case .zeroOrBelow: return min(low, 0)...max(high, 100) * 1.15
-        case .fitted:
-            let bottom = max(0, low - 3)
-            return min(bottom, 90)...100
-        case .fittedVoltage:
-            return (low - 0.5)...(high + 0.5)
+    private func chart(_ selected: RideSample?) -> some View {
+        let domain = scaled(series.domain)
+        return Chart {
+            ForEach(regen, id: \.start) { segment in
+                RectangleMark(
+                    xStart: .value("Braking starts", segment.start),
+                    xEnd: .value("Braking ends", segment.end),
+                    yStart: .value("Low", domain.lowerBound),
+                    yEnd: .value("High", domain.upperBound)
+                )
+                .foregroundStyle(Palette.battery.opacity(0.07))
+            }
+            if metric == .power, domain.lowerBound < 0 {
+                RuleMark(y: .value("Zero", 0))
+                    .foregroundStyle(Color.gray.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            }
+            ForEach(series.drawn, id: \.offset) { point in
+                AreaMark(
+                    x: .value("Time", point.offset),
+                    yStart: .value("Base", domain.lowerBound),
+                    yEnd: .value(metric.title, point.value * scale)
+                )
+                .foregroundStyle(LinearGradient(colors: [tint.opacity(0.35), tint.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                .interpolationMethod(.monotone)
+                LineMark(x: .value("Time", point.offset), y: .value(metric.title, point.value * scale))
+                    .foregroundStyle(tint)
+                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .interpolationMethod(.monotone)
+            }
+            if let selected {
+                // A dark halo under a bright core, so the line shows on any fill and in light and dark mode.
+                RuleMark(x: .value("Selected", selected.offset))
+                    .foregroundStyle(Color(.systemBackground).opacity(0.9))
+                    .lineStyle(StrokeStyle(lineWidth: 6))
+                RuleMark(x: .value("Selected", selected.offset))
+                    .foregroundStyle(Color.primary)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                PointMark(x: .value("Selected", selected.offset), y: .value(metric.title, metric.value(selected) * scale))
+                    .symbol {
+                        Circle().fill(tint).frame(width: 13, height: 13)
+                            .overlay(Circle().stroke(Color.primary, lineWidth: 2.5))
+                    }
+                    .annotation(position: .top, spacing: 8, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
+                        marker(selected)
+                    }
+            }
         }
+        .chartXSelection(value: Binding(get: { selection }, set: { onTouch(metric, $0) }))
+        .chartXScale(domain: 0...series.duration)
+        .chartYScale(domain: domain)
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                AxisTick()
+                AxisValueLabel {
+                    if let seconds = value.as(Double.self) { Text(timeLabel(seconds)) }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.gray.opacity(0.35))
+                AxisValueLabel()
+            }
+        }
+        .chartPlotStyle { $0.clipped() }
+        .frame(height: 150)
+    }
+
+    // MARK: Header and label
+
+    /// The power that is coming back at this moment, taken from the recorded reading with the same rule the dashboard uses.
+    private func recoveredWatts(_ sample: RideSample) -> Double? {
+        guard metric == .power else { return nil }
+        let watts = RegenDetection.recoveredWatts(powerWatts: sample.powerWatts, speedKmh: sample.speedKmh)
+        return watts > 0 ? watts : nil
+    }
+
+    @ViewBuilder
+    private func header(_ selected: RideSample?) -> some View {
+        HStack(alignment: .top) {
+            Text(metric.title).font(.subheadline.weight(.semibold))
+            Spacer(minLength: 8)
+            if let selected {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    // While braking the power is negative; the amount coming back is shown, not a minus sign.
+                    Text(recoveredWatts(selected) ?? metric.value(selected) * scale, format: .number.precision(.fractionLength(metric.digits)))
+                        .font(.system(.title3, design: .rounded, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(tint)
+                    Text(unit).font(.caption).foregroundStyle(.secondary)
+                    if recoveredWatts(selected) != nil { RegenTag() }
+                    Text("at \(RideTime.label(selected.offset))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
+            } else {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Avg \(format(series.average * scale)) · Max \(format(series.maximum * scale)) \(unit)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                    if let recoveredText {
+                        Text("Recovery \(recoveredText)")
+                            .font(.caption2)
+                            .foregroundStyle(Palette.battery)
+                            .monospacedDigit()
+                    }
+                }
+            }
+        }
+    }
+
+    /// The reading at the line, on the chart itself: solid, so it stays readable over the drawing underneath.
+    private func marker(_ sample: RideSample) -> some View {
+        let watts = recoveredWatts(sample)
+        let text = watts.map { "Regen \(format($0)) W" }
+            ?? "\(format(metric.value(sample) * scale, digits: metric.digits)) \(unit)"
+        return Text(text)
+            .font(.caption.weight(.bold))
+            .monospacedDigit()
+            .foregroundStyle(watts == nil ? tint : Palette.battery)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Color(.secondarySystemBackground), in: Capsule())
+            .overlay(Capsule().stroke(watts == nil ? tint : Palette.battery, lineWidth: 1))
+    }
+
+    private func scaled(_ range: ClosedRange<Double>) -> ClosedRange<Double> {
+        (range.lowerBound * scale)...(range.upperBound * scale)
     }
 
     private func timeLabel(_ seconds: Double) -> String {
         seconds < 60 ? "\(Int(seconds))s" : "\(Int((seconds / 60).rounded()))m"
     }
 
-    private func format(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(0)))
+    private func format(_ value: Double, digits: Int = 0) -> String {
+        value.formatted(.number.precision(.fractionLength(digits)))
     }
 }
 

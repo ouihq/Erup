@@ -311,13 +311,7 @@ struct ElectricalPanels: View {
                     }
                     .padding(.leading, 6)
                     if (panel.unit == "W" || panel.unit == "A"), panel.value(shown) < 0, shown.speedKmh > 2 {
-                        Text("Regen")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Palette.battery.opacity(0.18)))
-                            .foregroundStyle(Palette.battery)
-                            .accessibilityLabel("Regenerative braking")
+                        RegenTag()
                     }
                 }
                 Spacer(minLength: 0)
