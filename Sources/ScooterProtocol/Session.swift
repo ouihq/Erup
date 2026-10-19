@@ -20,6 +20,9 @@ public enum SessionFrames {
     public static let enterBridge: [UInt8] = [0xA5, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x5A]
     public static let leaveBridge: [UInt8] = start
 
-    public static let keepAliveInterval: Duration = .milliseconds(300)
+    /// The scooter keeps streaming for about 2.7 to 3.4 s without a keep-alive. A phone log from rides showed the
+    /// write buffer full most of the time at 3 keep-alives per second, so the timer sends one per second. The frame
+    /// driven rule (every 5th frame) still sends them sooner while frames flow.
+    public static let keepAliveInterval: Duration = .seconds(1)
     public static let telemetryFramesPerKeepAlive = 5
 }

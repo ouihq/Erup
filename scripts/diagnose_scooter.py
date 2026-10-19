@@ -267,6 +267,7 @@ class Link:
         self.write_latencies: list[float] = []
         self.zero_speed_since: float | None = None
         self.callback_errors = 0
+        self.response_writes = bool(getattr(args, "response_writes", False))
         self.connect_times: list[float] = []
         self.first_frame_times: list[float] = []
         self.rssi = getattr(args, "scan_rssi", None)
@@ -441,7 +442,7 @@ class Link:
             return
         began = time.monotonic()
         try:
-            await self.client.write_gatt_char(DATA_WRITE, data, response=False)
+            await self.client.write_gatt_char(DATA_WRITE, data, response=self.response_writes)
         except Exception as error:  # noqa: BLE001
             self.rec.event("write_error", label=label, error=str(error))
             return
@@ -457,7 +458,7 @@ class Link:
         if not self.connected:
             return
         try:
-            await self.client.write_gatt_char(CMD_WRITE, data, response=False)
+            await self.client.write_gatt_char(CMD_WRITE, data, response=self.response_writes)
         except Exception as error:  # noqa: BLE001
             self.rec.event("write_error", label=label, error=str(error))
             return
@@ -611,6 +612,40 @@ async def sc_baseline(link: Link, args) -> dict:
     return {**stats, "new_gaps": len(link.gaps) - gaps_before, "stalled_at_end": stalled,
             "verdict": "STALLED with keep-alives only: the stall needs no trigger from the app" if stalled or stats.get("gaps_over_1s")
             else "stable with keep-alives only: stalls need a trigger"}
+
+
+async def sc_writetype(link: Link, args) -> dict:
+    """The official Android app writes WITH response; Erup wrote without. On the phone, writes without response
+    left the send buffer full for seconds and the scooter stopped streaming. Which way keeps the stream steady?"""
+    table = []
+    original = link.response_writes
+    for label, response, interval in [("without response, keep-alive every 0.3 s (old Erup)", False, 0.3),
+                                      ("without response, keep-alive every 1 s", False, 1.0),
+                                      ("WITH response, keep-alive every 0.3 s", True, 0.3),
+                                      ("WITH response, keep-alive every 1 s (new Erup)", True, 1.0)]:
+        if not await healthy(link, 2.0):
+            table.append({"config": label, "error": "no stream"})
+            continue
+        link.response_writes = response
+        link.set_keepalive("both", interval)
+        start, gaps_before, writes_before = time.monotonic(), len(link.gaps), len(link.write_latencies)
+        await asyncio.sleep(args.step_seconds * 2)
+        times = [t for t in link.frame_times if t >= start]
+        latencies = link.write_latencies[writes_before:]
+        stats = frame_stats(times)
+        died = bool(link.frame_times) and time.monotonic() - link.frame_times[-1] > STALL_SECONDS
+        table.append({"config": label, "frames_per_second": stats.get("frames_per_second"),
+                      "interval_p95_ms": stats.get("interval_p95_ms"), "interval_max_ms": stats.get("interval_max_ms"),
+                      "gaps_over_1s": len(link.gaps) - gaps_before, "stream_died": died,
+                      "writes": len(latencies),
+                      "write_time_ms_p50": round(percentile(latencies, 0.5) * 1000, 1) if latencies else None,
+                      "write_time_ms_max": round(max(latencies) * 1000, 1) if latencies else None})
+        if died:
+            await link.reconnect()
+    link.response_writes = original
+    link.set_keepalive("both")
+    bad = [row["config"] for row in table if row.get("stream_died") or row.get("gaps_over_1s")]
+    return {"table": table, "verdict": ("gaps or stalls with: " + "; ".join(bad)) if bad else "every write style kept the stream steady on this link"}
 
 
 async def sc_no_keepalive(link: Link, args) -> dict:
@@ -902,6 +937,7 @@ def link_metrics(link: Link) -> dict:
 
 
 SCENARIOS = {
+    "writetype": (sc_writetype, "writes with vs without response, at two keep-alive speeds: frame rate, gaps and write time"),
     "baseline": (sc_baseline, "streaming with keep-alives only (the control)"),
     "nokeepalive": (sc_no_keepalive, "how long the stream lasts without keep-alives"),
     "cadence": (sc_cadence, "which keep-alive cadence keeps the stream up"),
@@ -912,7 +948,7 @@ SCENARIOS = {
     "reconnect": (sc_reconnect, "repeated connection loss and reconnect: timing and reliability"),
     "soak": (sc_soak, "idle for a while, app-like traffic or keep-alives only (--soak-mode)"),
 }
-ALL_ORDER = ["baseline", "nokeepalive", "cadence", "at", "bridge", "suspend", "recovery", "reconnect", "soak"]
+ALL_ORDER = ["writetype", "baseline", "nokeepalive", "cadence", "at", "bridge", "suspend", "recovery", "reconnect", "soak"]
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -1202,6 +1238,45 @@ def parse_time(text: str) -> dt.datetime:
     return dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
 
 
+def beep_section(events: list) -> list[str]:
+    """The scooter beeps every time a connection is made, so every 'link established' is a beep. Explains each one."""
+    beeps = []
+    for index, event in enumerate(events):
+        if event[2] == "connection" and event[3].startswith("link established"):
+            cause = "first connection of this app run"
+            for earlier in reversed(events[:index]):
+                text = earlier[3]
+                if "ropping the link to reconnect" in text:
+                    cause = "the APP dropped the link on purpose after a stalled stream (avoidable)"
+                    break
+                if text.startswith("link lost"):
+                    detail = text.split(";")[0].replace("link lost: ", "")
+                    if "no error (clean disconnect)" in detail:
+                        # Radio loss and the scooter closing the link both come with an error. A clean disconnect is the app's own.
+                        cause = "the APP dropped the link (clean disconnect, no error from Bluetooth) (avoidable)"
+                    else:
+                        cause = f"the LINK was lost: {detail}"
+                    break
+                if "session ended" in text and "stream" in earlier[2]:
+                    continue
+            beeps.append((event[0], event[1], cause))
+    out = ["", "## Beeps (every connection makes the scooter beep)", "", f"- {len(beeps)} connection(s) in this log"]
+    if len(beeps) > 1:
+        gaps = [(b[0] - a[0]).total_seconds() for a, b in zip(beeps, beeps[1:])]
+        out.append(f"- time between beeps: shortest {min(gaps):.0f} s, median {statistics.median(gaps):.0f} s, longest {max(gaps):.0f} s")
+    for start, where, cause in beeps:
+        out.append(f"- {start:%H:%M:%S} ({where}): {cause}")
+    by_cause = Counter("app-initiated reconnect" if "APP dropped" in c else "link lost" if "LINK was lost" in c else "first connection" for _, _, c in beeps)
+    if beeps:
+        out.append("- summary: " + ", ".join(f"{count} x {name}" for name, count in by_cause.most_common()))
+        if by_cause.get("app-initiated reconnect"):
+            out.append("  - app-initiated beeps can be reduced by waiting longer before dropping a quiet link")
+        if by_cause.get("link lost"):
+            out.append("  - 'connection timeout' means the radio link was lost (signal, body shadowing the phone in a pocket); "
+                       "'the scooter ended the link' means the scooter closed it; neither can be avoided by the app, only reconnected faster")
+    return out
+
+
 def analyze(path: Path) -> str:
     events, frames = [], []
     for raw in path.read_text().splitlines():
@@ -1221,6 +1296,8 @@ def analyze(path: Path) -> str:
     stalls = [e for e in events if "stream stalled" in e[3] or "stalled for" in e[3]]
     quiet_ok = [e for e in events if "frames are back" in e[3]]
     out += [f"- Links lost: {len(links)}, stalls detected: {len(stalls)}, recovered without reconnect: {len(quiet_ok)}", ""]
+
+    out += beep_section(events)
 
     rx = [f for f in frames if f[1] == "RX" and f[2] == "frame 1"]
     gaps = []
@@ -1358,6 +1435,7 @@ def main() -> int:
     runner.add_argument("--name-prefix", default=NAME_PREFIX)
     runner.add_argument("--out", help="output folder")
     runner.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    runner.add_argument("--response-writes", action="store_true", help="write with response in every scenario (the official app does)")
     runner.add_argument("--throttle", action="store_true", help="you hold the throttle (wheel off the ground) to keep the scooter awake")
     runner.add_argument("--bridge-every", type=float, default=30, help="soak 'app' mode: repeat the bridge read every N seconds (0 = once)")
     runner.add_argument("--bridge-variant", choices=BRIDGE_VARIANTS, default="app", help="how the soak closes its bridge reads")

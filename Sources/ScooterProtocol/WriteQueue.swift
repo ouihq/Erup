@@ -21,6 +21,8 @@ public struct WriteQueue: Sendable {
     public init() {}
 
     public var isEmpty: Bool { items.isEmpty }
+    /// The next item, without removing it, so a write that has to wait is not lost.
+    public var first: Item? { items.first }
     public var count: Int { items.count }
 
     @discardableResult

@@ -14,6 +14,7 @@ private enum CBEvent: @unchecked Sendable {
     case notificationState(CBPeripheral, characteristic: UInt16?, isNotifying: Bool, Error?)
     case value(CBPeripheral, characteristic: UInt16?, bytes: [UInt8], Error?)
     case readyToWrite(CBPeripheral)
+    case wroteValue(CBPeripheral, characteristic: UInt16?, Error?)
 }
 
 private extension CBUUID {
@@ -92,6 +93,10 @@ private final class CentralDelegate: NSObject, CBCentralManagerDelegate, CBPerip
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
         continuation.yield(.readyToWrite(peripheral))
     }
+
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        continuation.yield(.wroteValue(peripheral, characteristic: characteristic.uuid.shortValue, error))
+    }
 }
 
 actor ScooterConnection: ScooterLink {
@@ -107,6 +112,7 @@ actor ScooterConnection: ScooterLink {
     /// timer can both be late while iOS has the app suspended; an arriving frame is the one thing that wakes it.
     private static let keepAliveSafetyInterval: Duration = .seconds(1)
     private static let healthLogInterval: Duration = .seconds(15)
+    private static let writeAckTimeout: Duration = .seconds(3)
     private static let log = DiagnosticLog.shared
 
     private let emitter: AsyncStream<LinkEvent>.Continuation
@@ -145,6 +151,13 @@ actor ScooterConnection: ScooterLink {
     /// The last write that was not a keep-alive, so a stall can be tied to what the app sent just before it.
     private var lastOtherWrite: (label: String, at: ContinuousClock.Instant)?
     private var bridgeClosedAt: ContinuousClock.Instant?
+    /// Writes with response are acknowledged one at a time, like the official Android app does. The send buffer of
+    /// writes without response was full for seconds on a phone during rides, which starved the scooter of keep-alives.
+    private var responseWriteInFlight: ContinuousClock.Instant?
+    private var responseWritesDisabled = false
+    private var missedAcknowledgements = 0
+    private var acksInWindow = 0
+    private var slowestAckInWindow: Duration = .zero
     private var lastStallStartedLog: ContinuousClock.Instant?
     private var lastHealthLog = ContinuousClock.now
     private var bridgeBacklog: [BridgeEvent] = []
@@ -435,6 +448,9 @@ actor ScooterConnection: ScooterLink {
         case .readyToWrite(let target):
             guard target.identifier == peripheral?.identifier else { return }
             flushWrites()
+        case .wroteValue(let target, _, let error):
+            guard target.identifier == peripheral?.identifier else { return }
+            handleWriteAcknowledgement(error: error)
         }
     }
 
@@ -608,7 +624,8 @@ actor ScooterConnection: ScooterLink {
             return
         }
         sessionActive = true
-        Self.log.log(.stream, "session started: notifications on, start frame sent")
+        responseWriteInFlight = nil
+        Self.log.log(.stream, "session started: notifications on, start frame sent; writes go out \(usesResponse(write) ? "WITH response (acknowledged, like the official app)" : "without response")")
         receivedTelemetry = false
         telemetryFrameCount = 0
         lastKeepAlive = nil
@@ -638,6 +655,7 @@ actor ScooterConnection: ScooterLink {
         bridgeStartedAt = nil
         bridgeClosedAt = nil
         keepAliveGate.reset()
+        responseWriteInFlight = nil
         lastFrameAt = nil
         stallPolicy.reset()
         bridgeBacklog.removeAll()
@@ -732,6 +750,9 @@ actor ScooterConnection: ScooterLink {
             parts.append("no non-keep-alive write this session")
         }
         parts.append("\(writeQueue.count) write(s) waiting, radio buffer full \(blockedSinceLastFrame)x since the last frame")
+        if let sent = responseWriteInFlight {
+            parts.append("a write has waited \(Self.seconds(ContinuousClock.now - sent)) s for its acknowledgement")
+        }
         parts.append("bridge \(bridgeActive ? "open" : "closed")")
         return parts.joined(separator: "; ")
     }
@@ -746,12 +767,14 @@ actor ScooterConnection: ScooterLink {
     private func logHealthIfDue() {
         let now = ContinuousClock.now
         guard now - lastHealthLog >= Self.healthLogInterval else { return }
-        Self.log.log(.stream, "stream ok: \(framesInWindow) frames in \(Self.seconds(now - lastHealthLog)) s; keep-alives queued \(keepAlivesInWindow), writes sent \(writesInWindow), radio buffer full \(blockedInWindow)x")
+        Self.log.log(.stream, "stream ok: \(framesInWindow) frames in \(Self.seconds(now - lastHealthLog)) s; keep-alives queued \(keepAlivesInWindow), writes sent \(writesInWindow), acknowledged \(acksInWindow) (slowest \(Int(Double(slowestAckInWindow.components.attoseconds) / 1e15 + Double(slowestAckInWindow.components.seconds) * 1000)) ms), radio buffer full \(blockedInWindow)x")
         lastHealthLog = now
         framesInWindow = 0
         keepAlivesInWindow = 0
         writesInWindow = 0
         blockedInWindow = 0
+        acksInWindow = 0
+        slowestAckInWindow = .zero
     }
 
     private func sendKeepAlive() {
@@ -768,15 +791,35 @@ actor ScooterConnection: ScooterLink {
         if sessionActive, !receivedTelemetry { setState(.searching(.silent)) }
     }
 
+    private func usesResponse(_ characteristic: CBCharacteristic) -> Bool {
+        !responseWritesDisabled && !FeatureFlags.forceWriteWithoutResponse && characteristic.properties.contains(.write)
+    }
+
     private func flushWrites() {
         guard let target = peripheral, target.state == .connected else { return }
-        while target.canSendWriteWithoutResponse, let item = writeQueue.popFirst() {
+        var blocked = false
+        while let item = writeQueue.first {
             let id = item.channel == .data ? GATT.dataWrite : GATT.commandWrite
             guard let characteristic = characteristics[id] else {
+                _ = writeQueue.popFirst()
                 emitter.yield(.failure(.characteristicMissing(id)))
                 continue
             }
-            target.writeValue(Data(item.bytes), for: characteristic, type: .withoutResponse)
+            if usesResponse(characteristic) {
+                if let sent = responseWriteInFlight {
+                    // One acknowledged write at a time; the next goes out when the answer arrives.
+                    guard ContinuousClock.now - sent > Self.writeAckTimeout else { blocked = true; break }
+                    noteMissingAcknowledgement()
+                    continue
+                }
+                _ = writeQueue.popFirst()
+                responseWriteInFlight = .now
+                target.writeValue(Data(item.bytes), for: characteristic, type: .withResponse)
+            } else {
+                guard target.canSendWriteWithoutResponse else { blocked = true; break }
+                _ = writeQueue.popFirst()
+                target.writeValue(Data(item.bytes), for: characteristic, type: .withoutResponse)
+            }
             writesInWindow += 1
             if !item.isKeepAlive {
                 let label = Self.label(for: item)
@@ -784,9 +827,36 @@ actor ScooterConnection: ScooterLink {
                 Self.log.log(.stream, "wrote \(label)")
             }
         }
-        if !writeQueue.isEmpty, !target.canSendWriteWithoutResponse {
+        if blocked {
             blockedInWindow += 1
             blockedSinceLastFrame += 1
+        }
+    }
+
+    private func handleWriteAcknowledgement(error: Error?) {
+        if let sent = responseWriteInFlight {
+            let latency = ContinuousClock.now - sent
+            acksInWindow += 1
+            if latency > slowestAckInWindow { slowestAckInWindow = latency }
+        }
+        responseWriteInFlight = nil
+        if let error {
+            // The characteristic does not take writes with response after all: go back to the old way for good.
+            Self.log.log(.error, "a write with response failed (\(Self.describe(error))). Falling back to writes without response")
+            responseWritesDisabled = true
+        } else {
+            missedAcknowledgements = 0
+        }
+        flushWrites()
+    }
+
+    private func noteMissingAcknowledgement() {
+        responseWriteInFlight = nil
+        missedAcknowledgements += 1
+        Self.log.log(.stream, "no acknowledgement for a write within \(Self.seconds(Self.writeAckTimeout)) s (\(missedAcknowledgements) in a row)")
+        if missedAcknowledgements >= 2 {
+            Self.log.log(.error, "writes with response are not acknowledged on this link. Falling back to writes without response")
+            responseWritesDisabled = true
         }
     }
 

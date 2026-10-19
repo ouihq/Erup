@@ -417,8 +417,10 @@ final class ScooterStore {
     }
 
     /// Loads the AT settings once per connection, so Settings is already filled when it opens.
-    private func prefetchSettingsIfNeeded() {
-        guard !FeatureFlags.pauseAutomaticReads, !settingsPrefetched, !isLoadingSettings, isReady else { return }
+    private func prefetchSettingsIfNeeded(speedKmh: Double) {
+        // Not while riding: the extra writes load a link that was already struggling, and nobody reads settings mid-ride.
+        guard !FeatureFlags.pauseAutomaticReads, !settingsPrefetched, !isLoadingSettings, isReady,
+              speedKmh <= ControlFrame.standstillThresholdKmh else { return }
         settingsPrefetched = true
         Task {
             try? await Task.sleep(for: .milliseconds(1500))
@@ -561,7 +563,7 @@ final class ScooterStore {
             appendLiveSample(for: value)
             refreshControlWordIfNeeded(speedKmh: value.speedKmh(scaled: telemetry2?.speedScalingFlag ?? false))
             accumulateRegen(power: value.power, speedKmh: value.speedKmh(scaled: telemetry2?.speedScalingFlag ?? false))
-            prefetchSettingsIfNeeded()
+            prefetchSettingsIfNeeded(speedKmh: value.speedKmh(scaled: telemetry2?.speedScalingFlag ?? false))
             let confirmed = confirmPendingChanges(against: value.register0)
             publish(force: confirmed || telemetry1 == nil)
         case .telemetry2(let value):
@@ -581,7 +583,7 @@ final class ScooterStore {
         defer { lastFrameProcessed = now }
         guard !isInForeground else { return }
         if let last = lastFrameProcessed, now.timeIntervalSince(last) > 2 {
-            DiagnosticLog.shared.log(.app, String(format: "the app got CPU time again after %.1f s without processing a frame: iOS had it suspended", now.timeIntervalSince(last)))
+            DiagnosticLog.shared.log(.app, String(format: "no frame was processed for %.1f s while in the background (the stream stalled, or iOS suspended the app)", now.timeIntervalSince(last)))
         }
         if now.timeIntervalSince(lastBackgroundLog) > 15 {
             lastBackgroundLog = now

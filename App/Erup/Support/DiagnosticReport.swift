@@ -35,6 +35,7 @@ struct DiagnosticReport: Transferable {
             ("Bluetooth firmware", store.deviceInfo.firmwareRevision ?? "unknown"),
             ("Frame logging", store.isFrameLoggingEnabled ? "on" : "off"),
             ("Automatic reads", FeatureFlags.pauseAutomaticReads ? "PAUSED (debug test)" : "on"),
+            ("Write mode", FeatureFlags.forceWriteWithoutResponse ? "forced WITHOUT response (debug)" : "with response when the scooter allows it"),
             ("Stay connected with the screen off", BackgroundKeepAlive.isEnabled ? "ON (location session keeps the app running)" : "off (iOS suspends the app soon after the screen locks)"),
             ("Location permission", Self.locationStatus),
         ]

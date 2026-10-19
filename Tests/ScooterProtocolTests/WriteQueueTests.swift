@@ -27,4 +27,15 @@ final class WriteQueueTests: XCTestCase {
         queue.removeAll()
         XCTAssertTrue(queue.isEmpty)
     }
+
+    func testFirstShowsTheNextWriteWithoutRemovingIt() {
+        var queue = WriteQueue()
+        XCTAssertNil(queue.first)
+        queue.enqueue(.init(channel: .data, bytes: [1]))
+        queue.enqueue(.init(channel: .data, bytes: [2], isKeepAlive: true))
+        XCTAssertEqual(queue.first?.bytes, [1])
+        XCTAssertEqual(queue.count, 2, "peeking must not consume the write, so one that has to wait is not lost")
+        XCTAssertEqual(queue.popFirst()?.bytes, [1])
+        XCTAssertEqual(queue.first?.bytes, [2])
+    }
 }
