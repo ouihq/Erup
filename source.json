@@ -22,7 +22,10 @@
       "screenshots": [
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/dashboard.png",
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/rides.png",
-        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/battery.png"
+        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/map.png",
+        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/charts.png",
+        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/battery.png",
+        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/connection.png"
       ],
       "version": "1.3.0",
       "versionDate": "2026-10-19",

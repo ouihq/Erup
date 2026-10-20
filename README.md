@@ -17,9 +17,16 @@
 <p align="center">
   <img src="docs/screenshots/dashboard.png" width="260" alt="Live dashboard with speedometer, gear, light, cruise and lock">
   &nbsp;
-  <img src="docs/screenshots/rides.png" width="260" alt="Ride statistics and history">
+  <img src="docs/screenshots/rides.png" width="260" alt="Ride history with daily totals and statistics">
+  &nbsp;
+  <img src="docs/screenshots/map.png" width="260" alt="Ride route on a map, colored by speed">
+</p>
+<p align="center">
+  <img src="docs/screenshots/charts.png" width="260" alt="Ride charts with a draggable line and measured regenerative braking">
   &nbsp;
   <img src="docs/screenshots/battery.png" width="260" alt="Battery, efficiency and pack health">
+  &nbsp;
+  <img src="docs/screenshots/connection.png" width="260" alt="Connection and ride detection settings">
 </p>
 
 Live speed and battery at a glance, rides that log themselves, widgets, a Live Activity and Control Center toggles, all over a Bluetooth link that reconnects on its own. Quick to open, quiet in the background, and fully usable with larger text and VoiceOver.
