@@ -8,6 +8,7 @@ struct LiveChartsCard: View {
         case speed = "Speed"
         case power = "Power"
         case battery = "Battery"
+        case temperature = "Temp"
 
         var id: Self { self }
     }
@@ -63,10 +64,18 @@ struct LiveChartsCard: View {
             }
             .adaptiveSegmentedStyle()
 
-            if metric != .power { header(series) }
+            if metric != .power, metric != .temperature { header(series) }
 
             if metric == .power {
                 ElectricalPanels(samples: series.samples, xDomain: series.xDomain, xTicks: series.xTicks)
+            } else if metric == .temperature {
+                TemperatureChart(
+                    points: series.samples.enumerated().map { index, sample in
+                        .init(x: sample.date, controller: Double(sample.controllerTemperature), motor: Double(sample.motorTemperature), id: index)
+                    },
+                    xDomain: series.xDomain, xTicks: series.xTicks,
+                    xLabel: { relativeLabel(for: $0, end: series.xDomain.upperBound) }
+                )
             } else {
             Chart {
                 ForEach(Array(zip(series.samples, series.values)), id: \.0.id) { sample, value in
@@ -109,7 +118,7 @@ struct LiveChartsCard: View {
                 }
             }
             .chartYAxis {
-                AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.gray.opacity(0.35))
                     AxisValueLabel()
                 }
@@ -139,6 +148,7 @@ struct LiveChartsCard: View {
     private func header(_ series: Series) -> some View {
         HStack(alignment: .firstTextBaseline) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(metric.rawValue).font(.subheadline).foregroundStyle(.secondary)
                 Text(series.current.map(format) ?? "–")
                     .font(.system(.title, design: .rounded, weight: .semibold))
                     .monospacedDigit()
@@ -204,6 +214,8 @@ struct LiveChartsCard: View {
         case .battery:
             let low = max(0, (minimum ?? 100) - 5)
             return (low > 90 ? 90 : low)...100
+        case .temperature:
+            return 0...100
         }
     }
 
@@ -227,6 +239,7 @@ struct LiveChartsCard: View {
         case .speed: units.speedLabel
         case .power: "W"
         case .battery: "%"
+        case .temperature: "°C"
         }
     }
 
@@ -239,6 +252,7 @@ struct LiveChartsCard: View {
         case .speed: Palette.speed
         case .power: Palette.power
         case .battery: Palette.battery
+        case .temperature: Palette.temperature
         }
     }
 
@@ -251,6 +265,7 @@ struct LiveChartsCard: View {
         case .speed: units.speed(fromKmh: sample.speedKmh)
         case .power: sample.powerWatts
         case .battery: Double(sample.batteryPercent)
+        case .temperature: Double(max(sample.controllerTemperature, sample.motorTemperature))
         }
     }
 }
@@ -348,13 +363,13 @@ struct ElectricalPanels: View {
                 }
             }
             .chartYAxis {
-                AxisMarks(position: .trailing, values: .automatic(desiredCount: 2)) { value in
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 2)) { value in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.gray.opacity(0.35))
                     AxisValueLabel {
                         if let number = value.as(Double.self) {
                             Text(number.formatted(.number.precision(.fractionLength(panel.unit == "V" ? 1 : 0))))
                                 .font(.caption2)
-                                .frame(width: 40, alignment: .leading)
+                                .frame(width: 40, alignment: .trailing)
                         }
                     }
                 }
@@ -368,77 +383,6 @@ struct ElectricalPanels: View {
         let seconds = Int(xDomain.upperBound.timeIntervalSince(date).rounded())
         if seconds <= 0 { return "Now" }
         return seconds % 60 == 0 ? "−\(seconds / 60)m" : "−\(seconds)s"
-    }
-}
-
-/// Controller and motor temperature against the thresholds the alert engine uses.
-struct ThermalCard: View {
-    @Environment(ScooterStore.self) private var store
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Temperatures").font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 16) {
-                thermalGauge("Controller", value: store.telemetry1?.controllerTemperature, hot: AlertEngine.Threshold.controllerHot)
-                thermalGauge("Motor", value: store.telemetry1?.motorTemperature, hot: AlertEngine.Threshold.motorHot)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(cornerRadius: 16)
-    }
-
-    private func thermalGauge(_ title: String, value: Int?, hot: Int) -> some View {
-        ThermalRing(title: title, value: value, scaleMax: Double(hot) * 1.2)
-    }
-}
-
-/// Watch-style ring: an unfilled grey track with the colour only up to the current value, ending in a dot.
-struct ThermalRing: View {
-    let title: String
-    let value: Int?
-    let scaleMax: Double
-
-    private static let sweep = 0.75
-    private static let lineWidth: CGFloat = 11
-
-    private var fraction: Double { min(max(Double(value ?? 0) / scaleMax, 0), 1) }
-
-    var body: some View {
-        VStack(spacing: 4) {
-            ZStack {
-                Circle()
-                    .trim(from: 0, to: Self.sweep)
-                    .stroke(Color.secondary.opacity(0.18), style: StrokeStyle(lineWidth: Self.lineWidth, lineCap: .round))
-                    .rotationEffect(.degrees(135))
-                if value != nil {
-                    Circle()
-                        .trim(from: 0, to: Self.sweep * max(fraction, 0.001))
-                        .stroke(
-                            AngularGradient(
-                                colors: [.blue, .green, .yellow, .red],
-                                center: .center,
-                                startAngle: .degrees(0),
-                                endAngle: .degrees(270)
-                            ),
-                            style: StrokeStyle(lineWidth: Self.lineWidth, lineCap: .round)
-                        )
-                        .rotationEffect(.degrees(135))
-                        .motionSafeAnimation(.smooth, value: fraction)
-                }
-                Text(value.map { "\($0)°" } ?? "–")
-                    .font(.system(.title2, design: .rounded, weight: .semibold))
-                    .monospacedDigit()
-                    .contentTransition(.numericText(value: Double(value ?? 0)))
-            }
-            .padding(Self.lineWidth / 2)
-            .frame(width: 96, height: 96)
-            Text(title).font(.caption).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title) temperature")
-        .accessibilityValue(value.map { "\($0) degrees Celsius" } ?? "unknown")
     }
 }
 
@@ -508,7 +452,6 @@ struct StatusStrip: View {
         VStack(spacing: 16) {
             StatusStrip()
             LiveChartsCard(units: Units(useMiles: false))
-            ThermalCard()
         }
         .padding()
     }

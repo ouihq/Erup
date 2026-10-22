@@ -8,6 +8,10 @@ enum Palette {
     static let voltage = Color.yellow
     static let current = Color.cyan
     static let temperature = Color.red
+    static let controllerTemperature = Color.red
+    static let motorTemperature = Color.indigo
+    static let altitude = Color.teal
+    static let vibration = Color.brown
 }
 
 /// The small "Regen" tag next to a power reading while energy flows back into the battery.

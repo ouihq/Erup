@@ -14,8 +14,8 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "1.3.0"
-    CURRENT_PROJECT_VERSION: "20261018.11"
+    MARKETING_VERSION: "1.4.0"
+    CURRENT_PROJECT_VERSION: "20261022.1"
 
 packages:
   ScooterProtocol:
@@ -47,6 +47,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSBluetoothAlwaysUsageDescription: Erup connects to your scooter over Bluetooth.
         NSFaceIDUsageDescription: Erup asks for Face ID before unlocking your scooter or changing its PIN.
+        NSMotionUsageDescription: Erup measures road roughness, climbs and cornering with the phone's motion sensors and barometer during rides.
         NSLocationWhenInUseUsageDescription: Erup uses your location to keep the scooter connection running while the screen is off, and to record the route of your rides if you turn that on.
         UIBackgroundModes:
           - bluetooth-central

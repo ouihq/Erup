@@ -34,8 +34,6 @@ struct DashboardView: View {
                 ToggleRow()
                 LiveChartsCard(units: units)
                     .unavailable(!store.connection.isConnected)
-                ThermalCard()
-                    .unavailable(!store.connection.isConnected)
                 ServiceNotice(units: units)
             }
             .padding(.horizontal, 16)

@@ -6,7 +6,7 @@
 ![iOS 18+](https://img.shields.io/badge/iOS-18%2B-000000?logo=apple&logoColor=white)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-0A84FF)
 ![No dependencies](https://img.shields.io/badge/dependencies-none-8E8E93)
-![Version](https://img.shields.io/badge/version-1.3.0-0A84FF)
+![Version](https://img.shields.io/badge/version-1.4.0-0A84FF)
 
 <a href="https://altstore.io/source/raw.githubusercontent.com/ouihq/Erup/main/source.json?app=me.ouihq.erup"><img src="docs/badges/DownloadBadge_light.png" alt="Download on AltStore" width="245" height="78"></a>
 

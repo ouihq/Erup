@@ -49,6 +49,11 @@ struct SettingsView: View {
                         }
                     }
                 }
+                NavigationLink {
+                    AlertSettingsView()
+                } label: {
+                    SettingsLabel(title: "Alerts", symbol: "exclamationmark.triangle.fill", tint: .orange)
+                }
             }
 
             Section {
@@ -64,6 +69,11 @@ struct SettingsView: View {
                     ForEach(RideSettings.standingOptions, id: \.self) { Text("\($0) min").tag($0) }
                 } label: {
                     SettingsLabel(title: "End after standing still", symbol: "figure.stand", tint: .gray)
+                }
+                NavigationLink {
+                    RideDetailSettingsView()
+                } label: {
+                    SettingsLabel(title: "Ride details", symbol: "chart.xyaxis.line", tint: .teal)
                 }
                 NavigationLink {
                     ServiceSettingsView()

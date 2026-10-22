@@ -4,7 +4,7 @@ import MapKit
 import ScooterAnalytics
 
 /// The four things a ride detail charts.
-enum RideMetric: CaseIterable, Sendable {
+enum RideMetric: String, CaseIterable, Sendable {
     case speed, power, voltage, battery
 
     var title: String {
@@ -128,6 +128,7 @@ final class RouteGeometry: Sendable {
 /// Everything the ride detail needs, decoded and computed once off the main thread.
 struct RideDetailData: Sendable {
     let samples: [RideSample]
+    let digest: RideDigest
     let series: [RideSeries]
     let regen: [RegenSegment]
     /// Estimated from the stored samples. Rides recorded since the exact amount is measured carry it themselves.
@@ -164,6 +165,7 @@ struct RideDetailData: Sendable {
         }
         return RideDetailData(
             samples: samples,
+            digest: RideDigest(samples: samples),
             series: samples.isEmpty ? [] : RideMetric.allCases.map { RideSeries(metric: $0, samples: samples) },
             regen: RideInsights.regenSegments(in: samples),
             estimatedRegenWh: RideInsights.estimatedRegenWh(in: samples),

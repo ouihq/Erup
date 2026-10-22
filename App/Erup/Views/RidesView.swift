@@ -143,6 +143,8 @@ struct RideDetailView: View {
     @State private var selectedOffset: TimeInterval?
     @State private var focusedMetric: RideMetric?
     @State private var markerIndex: Int?
+    /// Charts the rider opened, remembered between rides. Everything starts folded.
+    @AppStorage(RideDisplaySettings.openKey) private var openCharts = ""
     @ScaledMetric(relativeTo: .largeTitle) private var heroSize: CGFloat = 48
 
     private var units: Units { Units(useMiles: useMiles) }
@@ -175,12 +177,11 @@ struct RideDetailView: View {
             noRouteCard
         }
         hero
-        details
+        details(detail?.digest)
         if let detail {
             if let message = detail.samplesError {
                 errorLabel("Charts unavailable: \(message)")
             } else if !detail.series.isEmpty {
-                highlights(detail)
                 charts(detail)
             }
             if let message = detail.trackError { errorLabel("Route unavailable: \(message)") }
@@ -273,79 +274,86 @@ struct RideDetailView: View {
         .cardBackground(cornerRadius: 16)
     }
 
-    private var details: some View {
-        VStack(spacing: 0) {
-            detailRow("Energy used", "\(ride.energyWh.formatted(.number.precision(.fractionLength(1)))) Wh", symbol: "bolt.fill", tint: Palette.power)
-            if let recovered, recovered.wattHours >= 0.05 {
-                Divider()
-                detailRow("Recovery", recoveredText(recovered), symbol: "leaf.arrow.circlepath", tint: Palette.battery)
-                    .accessibilityHint(recovered.isEstimate ? "Estimated from the stored one second samples" : "Measured while riding")
-            }
-            Divider()
-            detailRow(
-                "Consumption",
-                ride.whPerKm.map { "\(units.perDistance($0).formatted(.number.precision(.fractionLength(0)))) Wh/\(units.distanceLabel)" } ?? "–",
-                symbol: "bolt.horizontal.fill", tint: Palette.power
-            )
-            Divider()
-            detailRow("Battery", "\(ride.batteryStart)% → \(ride.batteryEnd)%", symbol: "battery.50percent", tint: Palette.battery)
-            Divider()
-            detailRow("Controller peak", "\(ride.maxControllerTemperature)°C", symbol: "cpu.fill", tint: Palette.temperature)
-            Divider()
-            detailRow("Motor peak", "\(ride.maxMotorTemperature)°C", symbol: "gearshape.2.fill", tint: Palette.temperature)
-        }
-        .padding(.horizontal, 14)
-        .cardBackground(cornerRadius: 16)
+    private struct Tile: Identifiable {
+        let title: String
+        let value: String
+        let note: String
+        let symbol: String
+        let tint: Color
+        var valueTint: Color?
+        var id: String { title }
     }
 
-    /// Moments worth looking at. Tapping one puts the line there on its chart and the marker on the map.
-    @ViewBuilder
-    private func highlights(_ detail: RideDetailData) -> some View {
-        let top = detail.highlights.topSpeed.flatMap { $0.speedKmh > 1 ? $0 : nil }
-        let peak = detail.highlights.peakPower.flatMap { $0.powerWatts > 1 ? $0 : nil }
-        if top != nil || peak != nil {
-            VStack(spacing: 0) {
-                if let top {
-                    highlightRow("Top speed", "\(units.speed(fromKmh: top.speedKmh).formatted(.number.precision(.fractionLength(1)))) \(units.speedLabel)",
-                                 at: top.offset, metric: .speed, symbol: "speedometer", tint: Palette.speed)
-                }
-                if top != nil, peak != nil { Divider() }
-                if let peak {
-                    highlightRow("Peak power", "\(peak.powerWatts.formatted(.number.precision(.fractionLength(0)))) W",
-                                 at: peak.offset, metric: .power, symbol: "bolt.fill", tint: Palette.power)
+    private func tiles(_ digest: RideDigest?) -> [Tile] {
+        var tiles = [
+            Tile(title: "Energy used", value: "\(ride.energyWh.formatted(.number.precision(.fractionLength(1)))) Wh",
+                 note: "from the battery", symbol: "bolt.fill", tint: Palette.power),
+        ]
+        if let recovered, recovered.wattHours >= 0.05 {
+            let share = ride.energyWh > 0 ? Int((recovered.wattHours / ride.energyWh * 100).rounded()) : nil
+            let note = share.map { "\(recovered.isEstimate ? "≈ " : "")\($0)% of energy used" } ?? "back from braking"
+            tiles.append(Tile(title: "Recovered", value: recoveredText(recovered), note: note,
+                              symbol: "leaf.arrow.circlepath", tint: Palette.battery, valueTint: Palette.battery))
+        }
+        tiles += [
+            Tile(title: "Consumption",
+                 value: ride.whPerKm.map { "\(units.perDistance($0).formatted(.number.precision(.fractionLength(0)))) Wh/\(units.distanceLabel)" } ?? "–",
+                 note: "energy per \(units.distanceLabel)", symbol: "bolt.horizontal.fill", tint: Palette.power),
+            Tile(title: "Battery", value: "\(ride.batteryStart)% → \(ride.batteryEnd)%",
+                 note: "\(ride.batteryUsed)% used", symbol: "battery.50percent", tint: Palette.battery),
+            Tile(title: "Controller", value: "\(ride.maxControllerTemperature)°C", note: "highest temperature",
+                 symbol: "cpu.fill", tint: Palette.temperature),
+            Tile(title: "Motor", value: "\(ride.maxMotorTemperature)°C", note: "highest temperature",
+                 symbol: "gearshape.2.fill", tint: Palette.temperature),
+        ]
+        if let climb = digest?.climbMeters, let descent = digest?.descentMeters {
+            tiles += [
+                Tile(title: "Climb", value: elevation(climb), note: "total uphill", symbol: "arrow.up.right", tint: Palette.altitude),
+                Tile(title: "Descent", value: elevation(descent), note: "total downhill", symbol: "arrow.down.right", tint: Palette.altitude),
+            ]
+        }
+        return tiles
+    }
+
+    /// The ride's numbers as small cards, two to a row, each saying what it is and what it is measured against.
+    private func details(_ digest: RideDigest?) -> some View {
+        let all = tiles(digest)
+        return Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+            ForEach(Array(stride(from: 0, to: all.count, by: 2)), id: \.self) { start in
+                GridRow {
+                    tile(all[start])
+                    if start + 1 < all.count { tile(all[start + 1]) } else { Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]) }
                 }
             }
-            .padding(.horizontal, 14)
-            .cardBackground(cornerRadius: 16)
         }
     }
 
-    private func highlightRow(_ title: String, _ value: String, at offset: TimeInterval, metric: RideMetric, symbol: String, tint: Color) -> some View {
-        Button {
-            selectedOffset = offset
-            focusedMetric = metric
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: symbol).foregroundStyle(tint).frame(width: 24)
-                Text(title).foregroundStyle(.primary)
-                Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(value).fontWeight(.medium).monospacedDigit()
-                    Text("at \(RideTime.label(offset))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                }
-                Image(systemName: "scope").font(.footnote).foregroundStyle(.tertiary)
+    private func tile(_ tile: Tile) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: tile.symbol).font(.footnote.weight(.semibold)).foregroundStyle(tile.tint)
+                Text(tile.title).font(.footnote.weight(.medium)).foregroundStyle(.secondary)
             }
-            .font(.subheadline)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
+            Text(tile.value)
+                .font(.system(.title3, design: .rounded, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(tile.valueTint ?? .primary)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+            Text(tile.note).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Shows this moment on its chart and on the map")
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardBackground(cornerRadius: 14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tile.title)
+        .accessibilityValue("\(tile.value), \(tile.note)")
     }
 
     private func charts(_ detail: RideDetailData) -> some View {
-        VStack(spacing: 16) {
-            ForEach(detail.series, id: \.metric) { series in
+        VStack(spacing: 0) {
+            ForEach(Array(detail.series.enumerated()), id: \.element.metric) { index, series in
+                if index > 0 { Divider().padding(.leading, 54) }
                 RideSeriesChart(
                     series: series,
                     unit: unit(for: series.metric),
@@ -354,11 +362,25 @@ struct RideDetailView: View {
                     selection: focusedMetric == series.metric ? selectedOffset : nil,
                     regen: series.metric == .power ? detail.regen : [],
                     recoveredText: series.metric == .power ? recovered.flatMap { $0.wattHours >= 0.05 ? recoveredText($0) : nil } : nil,
+                    isExpanded: openMetrics.contains(series.metric.rawValue),
+                    onToggle: { toggleChart(series.metric) },
                     onTouch: touched
                 )
                 .equatable()
             }
+            RideExtras(digest: detail.digest, units: units, embedded: true)
         }
+        .cardBackground(cornerRadius: 16)
+    }
+
+    private var openMetrics: Set<String> { RideDisplaySettings.members(of: openCharts) }
+
+    private func toggleChart(_ metric: RideMetric) {
+        var open = openMetrics
+        let wasOpen = open.contains(metric.rawValue)
+        if wasOpen { open.remove(metric.rawValue) } else { open.insert(metric.rawValue) }
+        if wasOpen, focusedMetric == metric { selectedOffset = nil; focusedMetric = nil }
+        withAnimation(.snappy) { openCharts = RideDisplaySettings.list(from: open) }
     }
 
     private func unit(for metric: RideMetric) -> String {
@@ -370,16 +392,9 @@ struct RideDetailView: View {
         }
     }
 
-    private func detailRow(_ title: String, _ value: String, symbol: String, tint: Color) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: symbol).foregroundStyle(tint).frame(width: 24)
-            Text(title).foregroundStyle(.secondary)
-            Spacer(minLength: 8)
-            Text(value).fontWeight(.medium).monospacedDigit().multilineTextAlignment(.trailing)
-        }
-        .font(.subheadline)
-        .padding(.vertical, 12)
-        .accessibilityElement(children: .combine)
+    private func elevation(_ meters: Double) -> String {
+        let value = units.useMiles ? meters * 3.28084 : meters
+        return "\(value.formatted(.number.precision(.fractionLength(0)))) \(units.useMiles ? "ft" : "m")"
     }
 
     private func errorLabel(_ text: String) -> some View {
@@ -416,6 +431,15 @@ enum RideTime {
 }
 
 extension RideMetric {
+    var symbol: String {
+        switch self {
+        case .speed: "gauge.with.needle.fill"
+        case .power: "bolt.fill"
+        case .voltage: "waveform.path.ecg"
+        case .battery: "battery.75percent"
+        }
+    }
+
     var tint: Color {
         switch self {
         case .speed: Palette.speed
@@ -442,35 +466,40 @@ struct RideSeriesChart: View, Equatable {
     let regen: [RegenSegment]
     /// "+10.8 Wh" or "≈ +10.8 Wh" for the power chart.
     let recoveredText: String?
+    var isExpanded = true
+    var onToggle: () -> Void = {}
     let onTouch: (RideMetric, TimeInterval?) -> Void
 
     nonisolated static func == (lhs: RideSeriesChart, rhs: RideSeriesChart) -> Bool {
         lhs.series === rhs.series && lhs.unit == rhs.unit && lhs.scale == rhs.scale && lhs.selection == rhs.selection
-            && lhs.regen == rhs.regen && lhs.recoveredText == rhs.recoveredText
+            && lhs.regen == rhs.regen && lhs.recoveredText == rhs.recoveredText && lhs.isExpanded == rhs.isExpanded
     }
 
     private var metric: RideMetric { series.metric }
     private var tint: Color { metric.tint }
     /// Same height whether or not a finger is down, so the plot never moves under the finger.
-    private static let headerHeight: CGFloat = 40
+    private static let headerHeight: CGFloat = 44
 
     var body: some View {
         let selected = selection.flatMap(series.sample(at:))
-        VStack(alignment: .leading, spacing: 8) {
-            header(selected)
-                .frame(height: Self.headerHeight, alignment: .topLeading)
-            if series.isDrawable {
-                chart(selected)
-            } else {
-                Text("Not enough data for a chart")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 150)
+        VStack(alignment: .leading, spacing: 0) {
+            headerRow(selected)
+            if isExpanded {
+                Group {
+                    if series.isDrawable {
+                        chart(selected)
+                    } else {
+                        Text("Not enough data for a chart")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 150)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
             }
         }
-        .padding(14)
-        .cardBackground(cornerRadius: 16)
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(metric.title) over the ride")
         .accessibilityValue("Average \(format(series.average * scale)), maximum \(format(series.maximum * scale)) \(unit)")
     }
@@ -553,36 +582,57 @@ struct RideSeriesChart: View, Equatable {
         return watts > 0 ? watts : nil
     }
 
-    @ViewBuilder
-    private func header(_ selected: RideSample?) -> some View {
-        HStack(alignment: .top) {
-            Text(metric.title).font(.subheadline.weight(.semibold))
-            Spacer(minLength: 8)
-            if let selected {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    // While braking the power is negative; the amount coming back is shown, not a minus sign.
-                    Text(recoveredWatts(selected) ?? metric.value(selected) * scale, format: .number.precision(.fractionLength(metric.digits)))
-                        .font(.system(.title3, design: .rounded, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(tint)
-                    Text(unit).font(.caption).foregroundStyle(.secondary)
-                    if recoveredWatts(selected) != nil { RegenTag() }
-                    Text("at \(RideTime.label(selected.offset))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                }
-            } else {
-                VStack(alignment: .trailing, spacing: 2) {
+    private var chevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+    }
+
+    /// One row for open and folded alike, so the whole width is the button: icon, name, average and maximum, then either the
+    /// reading under the finger or a small preview of the line.
+    private func headerRow(_ selected: RideSample?) -> some View {
+        Button(action: onToggle) {
+            HStack(spacing: 12) {
+                Image(systemName: metric.symbol).foregroundStyle(tint).frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(metric.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                     Text("Avg \(format(series.average * scale)) · Max \(format(series.maximum * scale)) \(unit)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                    if let recoveredText {
+                        .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                    if let recoveredText, !isExpanded || selected == nil {
                         Text("Recovery \(recoveredText)")
-                            .font(.caption2)
-                            .foregroundStyle(Palette.battery)
-                            .monospacedDigit()
+                            .font(.caption2).foregroundStyle(Palette.battery).monospacedDigit().lineLimit(1)
                     }
                 }
+                Spacer(minLength: 8)
+                if isExpanded {
+                    if let selected { reading(selected) }
+                } else {
+                    MiniLines(series: [(series.drawn.map { $0.value * scale }, tint)]).frame(width: 64, height: 28)
+                }
+                chevron
             }
+            // Same height whether or not a finger is down, so the plot never moves under the finger.
+            .frame(minHeight: Self.headerHeight)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+        .accessibilityHint(isExpanded ? "Hides the chart" : "Shows the chart")
+    }
+
+    private func reading(_ selected: RideSample) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            // While braking the power is negative; the amount coming back is shown, not a minus sign.
+            Text(recoveredWatts(selected) ?? metric.value(selected) * scale, format: .number.precision(.fractionLength(metric.digits)))
+                .font(.system(.title3, design: .rounded, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(tint)
+            Text(unit).font(.caption).foregroundStyle(.secondary)
+            if recoveredWatts(selected) != nil { RegenTag() }
+            Text("at \(RideTime.label(selected.offset))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
     }
 
