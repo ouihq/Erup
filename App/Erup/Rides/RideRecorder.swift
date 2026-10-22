@@ -23,6 +23,7 @@ final class RideRecorder {
     private let store: ScooterStore
     private let context: ModelContext
     private let track = TrackRecorder()
+    private let motion = MotionRecorder()
     private var detector = RideDetector(configuration: RideSettings.detectorConfiguration)
     private var finishTask: Task<Void, Never>?
     private var wasConnected = false
@@ -83,12 +84,32 @@ final class RideRecorder {
             lastDraftWrite = .distantPast
             lastDraftAttempt = .distantPast
             if UserDefaults.standard.bool(forKey: Self.gpsKey) { track.start() }
+            if MotionRecorder.isEnabled { motion.start() }
         case .ended(let summary):
-            finalize(summary, track: track.stop())
+            finalize(Self.merging(motion.stop(), into: summary), track: track.stop())
         case .discarded:
             _ = track.stop()
+            _ = motion.stop()
             discardLive()
         }
+    }
+
+    /// Attaches the phone's per-second readings to the ride samples they belong to.
+    private static func merging(_ recording: (origin: Date, seconds: [Int: PhoneSensors])?, into summary: RideSummary) -> RideSummary {
+        guard let recording else { return summary }
+        let shift = summary.startedAt.timeIntervalSince(recording.origin)
+        var base: Double?
+        let samples = summary.samples.map { sample -> RideSample in
+            var sample = sample
+            guard var sensors = recording.seconds[Int(sample.offset + shift)] else { return sample }
+            if let altitude = sensors.altitudeMeters {
+                base = base ?? altitude
+                sensors.altitudeMeters = altitude - (base ?? altitude)
+            }
+            sample.sensors = sensors
+            return sample
+        }
+        return summary.replacingSamples(samples)
     }
 
     // MARK: Storing a ride while it is in progress
@@ -188,7 +209,7 @@ final class RideRecorder {
         do {
             let rides = try context.fetch(descriptor)
             let manual = UserDefaults.standard.double(forKey: Self.capacityKey)
-            let model = RangeEstimator.model(rides: rides.map(\.energyRecord), manualCapacityWh: manual > 0 ? manual : nil)
+            let model = RangeEstimator.model(rides: rides.map(\.energyRecord), manualCapacityWh: manual > 0 ? manual : nil, nominalCapacityWh: BatteryModel.nominalCapacityWh)
             store.updateRideContext(rangeModel: model, lastRide: rides.first?.snapshotSummary)
         } catch {
             store.report("Ride history could not be loaded: \(error.localizedDescription)")

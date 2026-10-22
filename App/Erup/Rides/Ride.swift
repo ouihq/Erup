@@ -129,7 +129,11 @@ extension Ride {
             let acceleration = 6.0 / 40 * cos(t / 40)   // km/h per second
             // Pushing: power follows the speed and how hard it accelerates. Braking: energy comes back, up to about 180 W.
             let power = acceleration >= 0 ? speed * 14 + acceleration * 300 : max(-180, acceleration * 1800)
-            return RideSample(offset: t, speedKmh: speed, powerWatts: power, batteryPercent: 80 - second / 60, voltage: 40.5 - speed / 50)
+            return RideSample(
+                offset: t, speedKmh: speed, powerWatts: power, batteryPercent: 80 - second / 60, voltage: 40.5 - speed / 50,
+                controllerTemperature: 28 + second / 25, motorTemperature: 26 + second / 18,
+                sensors: PhoneSensors(altitudeMeters: 6 * sin(t / 90), vibrationG: 0.03 + 0.02 * abs(sin(t / 7)), peakG: 0.2 + 0.1 * abs(sin(t / 11)), rotationDegPerSecond: 20 * abs(sin(t / 13)))
+            )
         }
         let start = Date.now.addingTimeInterval(-86_400)
         for day in 0..<6 {

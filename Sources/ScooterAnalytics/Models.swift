@@ -31,13 +31,43 @@ public struct RideSample: Codable, Equatable, Sendable {
     public let powerWatts: Double
     public let batteryPercent: Int
     public let voltage: Double
+    /// Temperatures in °C. Absent in rides recorded before 1.3.
+    public var controllerTemperature: Int?
+    public var motorTemperature: Int?
+    /// Phone sensors, averaged over the sample's second. Absent when the sensor was off or unavailable.
+    public var sensors: PhoneSensors?
 
-    public init(offset: TimeInterval, speedKmh: Double, powerWatts: Double, batteryPercent: Int, voltage: Double) {
+    public init(
+        offset: TimeInterval, speedKmh: Double, powerWatts: Double, batteryPercent: Int, voltage: Double,
+        controllerTemperature: Int? = nil, motorTemperature: Int? = nil, sensors: PhoneSensors? = nil
+    ) {
         self.offset = offset
         self.speedKmh = speedKmh
         self.powerWatts = powerWatts
         self.batteryPercent = batteryPercent
         self.voltage = voltage
+        self.controllerTemperature = controllerTemperature
+        self.motorTemperature = motorTemperature
+        self.sensors = sensors
+    }
+}
+
+/// What the phone felt during one second of a ride. Orientation independent, so it works in any pocket or mount.
+public struct PhoneSensors: Codable, Equatable, Sendable {
+    /// Height change since the ride began, in metres, from the barometer.
+    public var altitudeMeters: Double?
+    /// Root-mean-square of the phone's acceleration without gravity, in g. A measure of road roughness.
+    public var vibrationG: Double?
+    /// Strongest acceleration without gravity within the second, in g. Braking, bumps and kerbs.
+    public var peakG: Double?
+    /// Strongest rotation rate within the second, in degrees per second. Leaning and cornering.
+    public var rotationDegPerSecond: Double?
+
+    public init(altitudeMeters: Double? = nil, vibrationG: Double? = nil, peakG: Double? = nil, rotationDegPerSecond: Double? = nil) {
+        self.altitudeMeters = altitudeMeters
+        self.vibrationG = vibrationG
+        self.peakG = peakG
+        self.rotationDegPerSecond = rotationDegPerSecond
     }
 }
 
@@ -77,6 +107,15 @@ public struct RideSummary: Equatable, Sendable {
         self.regenWh = regenWh
     }
 
+    public func replacingSamples(_ samples: [RideSample]) -> RideSummary {
+        RideSummary(
+            startedAt: startedAt, endedAt: endedAt, distanceKm: distanceKm, averageSpeedKmh: averageSpeedKmh,
+            maxSpeedKmh: maxSpeedKmh, energyWh: energyWh, batteryStart: batteryStart, batteryEnd: batteryEnd,
+            maxControllerTemperature: maxControllerTemperature, maxMotorTemperature: maxMotorTemperature,
+            internalResistanceOhm: internalResistanceOhm, samples: samples, regenWh: regenWh
+        )
+    }
+
     public var duration: TimeInterval { endedAt.timeIntervalSince(startedAt) }
     public var batteryUsed: Int { batteryStart - batteryEnd }
     public var whPerKm: Double? { distanceKm >= 0.1 ? energyWh / distanceKm : nil }
@@ -95,9 +134,16 @@ public struct RideSummary: Equatable, Sendable {
     /// over the riding time without the pause, and this ride's samples are shifted onto the combined timeline.
     public func merged(after previous: RideSummary) -> RideSummary {
         let shift = startedAt.timeIntervalSince(previous.startedAt)
-        let shifted = samples.map {
-            RideSample(offset: $0.offset + shift, speedKmh: $0.speedKmh, powerWatts: $0.powerWatts,
-                       batteryPercent: $0.batteryPercent, voltage: $0.voltage)
+        // The phone's height is measured from where each part began, so this part continues from where the earlier one ended.
+        let heightBase = previous.samples.last { $0.sensors?.altitudeMeters != nil }?.sensors?.altitudeMeters ?? 0
+        let shifted = samples.map { sample -> RideSample in
+            var sensors = sample.sensors
+            if let altitude = sensors?.altitudeMeters { sensors?.altitudeMeters = altitude + heightBase }
+            return RideSample(
+                offset: sample.offset + shift, speedKmh: sample.speedKmh, powerWatts: sample.powerWatts,
+                batteryPercent: sample.batteryPercent, voltage: sample.voltage,
+                controllerTemperature: sample.controllerTemperature, motorTemperature: sample.motorTemperature, sensors: sensors
+            )
         }
         let distance = previous.distanceKm + distanceKm
         let ridingTime = previous.duration + duration

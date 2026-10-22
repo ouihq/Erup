@@ -52,7 +52,8 @@ public struct RideDetector: Sendable {
         static func rideSample(_ sample: TelemetrySample, offset: TimeInterval) -> RideSample {
             RideSample(
                 offset: offset, speedKmh: sample.speedKmh, powerWatts: sample.powerWatts,
-                batteryPercent: sample.batteryPercent, voltage: sample.voltage
+                batteryPercent: sample.batteryPercent, voltage: sample.voltage,
+                controllerTemperature: sample.controllerTemperature, motorTemperature: sample.motorTemperature
             )
         }
 
