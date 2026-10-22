@@ -1,23 +1,37 @@
 import Charts
+import ScooterAnalytics
 import SwiftData
 import SwiftUI
 
 struct BatteryView: View {
     @Environment(ScooterStore.self) private var store
-    @Query(sort: \Ride.startedAt, order: .reverse) private var rides: [Ride]
+    @Query(BatteryView.rideDescriptor) private var rides: [Ride]
+    /// Worked out when the rides change, so a new battery reading does not redo it.
+    @State private var history = BatteryHistory.empty
     @AppStorage("useMiles") private var useMiles = false
     @AppStorage(RideRecorder.capacityKey) private var manualCapacityWh = 0.0
 
     private var units: Units { Units(useMiles: useMiles) }
-    private var recent: [Ride] { Array(rides.prefix(30)) }
+
+    /// The rides without their samples and routes, which this page never reads.
+    private static var rideDescriptor: FetchDescriptor<Ride> {
+        var descriptor = FetchDescriptor<Ride>(sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+        descriptor.propertiesToFetch = [\.id, \.startedAt, \.distanceKm, \.energyWh, \.batteryStart, \.batteryEnd, \.internalResistanceOhm]
+        return descriptor
+    }
+
+    /// Changes whenever a ride is added, finished or extended by a joined ride.
+    private var historyKey: [Double] {
+        [Double(rides.count), rides.first?.distanceKm ?? 0, rides.first?.energyWh ?? 0]
+    }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 nowCard
+                usageCard
                 efficiencyCard
                 healthCard
-                totalsCard
                 capacityCard
             }
             .padding(.horizontal, 16)
@@ -25,22 +39,30 @@ struct BatteryView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Battery")
+        .task(id: historyKey) { history = makeHistory() }
         .onChange(of: manualCapacityWh) {
             store.invalidateRideContext()
         }
     }
 
+    private func makeHistory() -> BatteryHistory {
+        BatteryHistory(entries: rides.map {
+            .init(id: $0.id, startedAt: $0.startedAt, distanceKm: $0.distanceKm, energyWh: $0.energyWh,
+                  batteryUsed: $0.batteryUsed, internalResistanceOhm: $0.internalResistanceOhm)
+        })
+    }
+
     // MARK: Now
 
-    private var percent: Int? { store.telemetry1?.batteryPercent }
+    private var percent: Int? { store.batteryPercent }
 
     private var levelTint: Color {
         guard let percent else { return .gray }
-        return percent <= 15 ? .red : percent <= 30 ? .orange : Palette.battery
+        return percent <= 15 ? .red : percent <= 30 ? .yellow : Palette.battery
     }
 
     private var activity: String? {
-        guard let current = store.telemetry1?.current else { return nil }
+        guard store.batteryIsLive, let current = store.telemetry1?.current else { return nil }
         if current < -0.2 { return "Charging" }
         if current > 0.5 { return "In use" }
         return "Resting"
@@ -56,7 +78,13 @@ struct BatteryView: View {
                     .monospacedDigit()
                     .contentTransition(.numericText(value: Double(percent ?? 0)))
                 Spacer()
-                if let activity {
+                if !store.batteryIsLive, let date = store.batteryDate, percent != nil {
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text("Last known").font(.footnote.weight(.medium))
+                        Text(date, style: .relative).font(.caption2) + Text(" ago").font(.caption2)
+                    }
+                    .foregroundStyle(.secondary)
+                } else if let activity {
                     Text(activity)
                         .font(.footnote.weight(.medium))
                         .padding(.horizontal, 10)
@@ -67,11 +95,17 @@ struct BatteryView: View {
             }
             ProgressView(value: Double(percent ?? 0), total: 100)
                 .tint(levelTint)
+                .opacity(store.batteryIsLive ? 1 : 0.6)
                 .motionSafeAnimation(.smooth, value: percent)
-            HStack(alignment: .top, spacing: 0) {
-                fact("Range", store.rangeKm.map { "\(Int(units.distance(fromKm: $0).rounded())) \(units.distanceLabel)" } ?? "Not yet")
+            Divider()
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)], spacing: 14) {
+                fact("Range", rangeText)
                 fact("Energy left", energyLeftText)
+                fact(store.batteryIsLive ? "Voltage" : "Voltage (last)", voltageText)
+                fact(timeTitle, timeText)
+                fact("Level from voltage", voltageLevelText)
                 fact("Last ride", lastRideText)
+                fact("Pack capacity", store.rangeModel.map { "\(Int($0.capacityWh.rounded())) Wh" } ?? "Not yet")
             }
             if store.rangeKm == nil {
                 note("Range appears after about 3 km of riding, once the app has learned how much energy you use.")
@@ -79,8 +113,69 @@ struct BatteryView: View {
         }
     }
 
+    private var voltage: Double? { store.telemetry1?.voltage ?? store.lastBattery?.voltage }
+
+    /// State of charge read off the cell voltage curve, after adding back the voltage lost to the load.
+    /// Shown only while the current is small, because that is when the curve is trustworthy.
+    private var voltageLevel: Double? {
+        let terminal: Double, current: Double
+        if store.batteryIsLive, let t = store.telemetry1 {
+            terminal = t.voltage
+            current = t.current
+        } else if let last = store.lastBattery, let c = last.current {
+            terminal = last.voltage
+            current = c
+        } else {
+            return nil
+        }
+        guard abs(current) < 6 else { return nil }
+        let open = BatteryModel.openCircuitVoltage(terminal: terminal, current: current, resistanceOhm: history.packResistanceOhm)
+        return BatteryModel.stateOfCharge(openCircuitVoltage: open)
+    }
+
+    private var voltageLevelText: String {
+        voltageLevel.map { "≈ \($0.formatted(.number.precision(.fractionLength(0)))) %" } ?? "Under load"
+    }
+
+    private var voltageText: String {
+        voltage.map { "\($0.formatted(.number.precision(.fractionLength(1)))) V" } ?? "–"
+    }
+
+    /// Electrical power right now: positive while riding, negative while charging.
+    private var power: Double? { store.batteryIsLive ? store.telemetry1?.power : nil }
+
+    private var timeTitle: String {
+        if let power, power < -15 { return "Full in" }
+        return "Time left"
+    }
+
+    /// Hours of riding left at the current draw, or time to full while charging.
+    private var timeText: String {
+        guard let model = store.rangeModel, let percent, let power else { return "–" }
+        let capacity = model.capacityWh
+        if power < -15 {
+            return duration(hours: BatteryModel.hoursToFull(percent: Double(percent), capacityWh: capacity, measuredWatts: -power))
+        }
+        guard power > 30 else { return "–" }
+        return duration(hours: capacity * Double(percent) / 100 / power)
+    }
+
+    private func duration(hours: Double) -> String {
+        let minutes = Int((hours * 60).rounded())
+        return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(minutes) min"
+    }
+
+    private var rangeText: String {
+        guard let range = store.rangeKm else { return "Not yet" }
+        func shown(_ km: Double) -> Int { Int(units.distance(fromKm: km).rounded()) }
+        if let band = store.rangeBandKm, shown(band.lowerBound) < shown(band.upperBound) {
+            return "\(shown(band.lowerBound))–\(shown(band.upperBound)) \(units.distanceLabel)"
+        }
+        return "\(shown(range)) \(units.distanceLabel)"
+    }
+
     private var lastRideText: String {
-        guard let ride = rides.first else { return "–" }
+        guard let ride = history.lastRide else { return "–" }
         return "−\(ride.batteryUsed)% · \(units.distance(fromKm: ride.distanceKm).formatted(.number.precision(.fractionLength(1)))) \(units.distanceLabel)"
     }
 
@@ -91,26 +186,11 @@ struct BatteryView: View {
 
     // MARK: Efficiency
 
-    private struct Consumption {
-        let current: Double
-        let previous: Double?
-    }
-
-    private var consumption: Consumption? {
-        let usable = rides.filter { $0.distanceKm >= 0.5 && $0.energyWh > 0 }
-        func average(_ slice: ArraySlice<Ride>) -> Double? {
-            let distance = slice.reduce(0) { $0 + $1.distanceKm }
-            guard distance > 0 else { return nil }
-            return slice.reduce(0) { $0 + $1.energyWh } / distance
-        }
-        guard let current = average(usable.prefix(10)) else { return nil }
-        let older = usable.dropFirst(10).prefix(10)
-        return Consumption(current: current, previous: older.count >= 3 ? average(older) : nil)
-    }
+    private var consumption: BatteryHistory.Consumption? { history.consumption }
 
     @ViewBuilder
     private var efficiencyCard: some View {
-        let measured = recent.filter { $0.whPerKm != nil }.reversed() as [Ride]
+        let measured = history.efficiency
         card {
             title("Efficiency", symbol: "leaf.fill")
             if let consumption {
@@ -126,13 +206,19 @@ struct BatteryView: View {
                             .foregroundStyle(delta.better ? Palette.battery : .red)
                     }
                 }
+                if let best = measured.map(\.whPerKm).min(), let worst = measured.map(\.whPerKm).max() {
+                    HStack(spacing: 0) {
+                        fact("Best ride", "\(Int(units.perDistance(best).rounded())) Wh/\(units.distanceLabel)")
+                        fact("Worst ride", "\(Int(units.perDistance(worst).rounded())) Wh/\(units.distanceLabel)")
+                    }
+                }
                 Text("Average of your last 10 rides. Lower is better.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 if measured.count > 1 {
                     Chart {
                         ForEach(measured) { ride in
-                            BarMark(x: .value("Date", ride.startedAt), y: .value("Wh", units.perDistance(ride.whPerKm ?? 0)), width: .fixed(12))
+                            BarMark(x: .value("Date", ride.date), y: .value("Wh", units.perDistance(ride.whPerKm)), width: .fixed(12))
                                 .foregroundStyle(LinearGradient(colors: [Palette.battery, Palette.battery.opacity(0.5)], startPoint: .top, endPoint: .bottom))
                                 .clipShape(RoundedRectangle(cornerRadius: 3))
                         }
@@ -152,7 +238,7 @@ struct BatteryView: View {
         }
     }
 
-    private func deltaText(_ consumption: Consumption) -> (text: String, better: Bool)? {
+    private func deltaText(_ consumption: BatteryHistory.Consumption) -> (text: String, better: Bool)? {
         guard let previous = consumption.previous, previous > 0 else { return nil }
         let change = (consumption.current - previous) / previous * 100
         guard abs(change) >= 1 else { return ("Same as before", true) }
@@ -162,31 +248,27 @@ struct BatteryView: View {
 
     // MARK: Health
 
-    private var resistances: [(date: Date, milliohm: Double)] {
-        recent.reversed().compactMap { ride in
-            ride.internalResistanceOhm.map { (ride.startedAt, $0 * 1000) }
-        }
+    private func capacityDetail(_ model: RangeModel) -> String {
+        if model.isCapacityCalibrated { return "Learned from your rides" }
+        return manualCapacityWh > 0 ? "Set by you" : "Rated capacity from the manual, until your rides show more"
     }
 
+    private var resistances: [BatteryHistory.Resistance] { history.resistances }
+
     private var resistanceTrend: (label: String, detail: String, tint: Color)? {
-        let values = resistances.map(\.milliohm)
-        guard values.count >= 4 else { return nil }
-        let half = values.count / 2
-        let early = values.prefix(half).reduce(0, +) / Double(half)
-        let late = values.suffix(half).reduce(0, +) / Double(half)
-        let change = (late - early) / early * 100
-        switch change {
-        case ..<5: return ("Stable", "No meaningful change over your recorded rides.", Palette.battery)
-        case ..<15: return ("Rising slowly", "A small rise is normal as a battery ages.", .orange)
-        default: return ("Rising", "Resistance is climbing faster than usual. Check the battery if range is also dropping.", .red)
-        }
+        history.resistanceTrend.map { ($0.label, $0.detail, $0.fast ? .red : $0.rising ? .yellow : Palette.battery) }
     }
 
     private var healthCard: some View {
         card {
             title("Battery health", symbol: "heart.text.square.fill")
             if let model = store.rangeModel {
-                row("Pack capacity", "\(Int(model.capacityWh.rounded())) Wh", detail: model.isCapacityCalibrated ? "Learned from your rides" : "Set by you")
+                row("Pack capacity", "\(Int(model.capacityWh.rounded())) Wh", detail: capacityDetail(model))
+                if model.isCapacityCalibrated {
+                    Divider()
+                    let health = BatteryModel.stateOfHealth(capacityWh: model.capacityWh)
+                    row("Capacity vs. new", "\(Int(min(health, 100).rounded())) %", detail: "Rated \(Int(BatteryModel.nominalCapacityWh)) Wh (36 V, 9.5 Ah)")
+                }
             } else {
                 row("Pack capacity", "Not yet", detail: "Learned after rides that use at least 10% of the battery")
             }
@@ -234,21 +316,28 @@ struct BatteryView: View {
         .accessibilityValue("\(values.count) measurements, from \(Int(values.first ?? 0)) to \(Int(values.last ?? 0)) milliohm")
     }
 
-    // MARK: Totals
+    // MARK: Usage
 
-    private var totalsCard: some View {
-        let distance = rides.reduce(0) { $0 + $1.distanceKm }
-        let energy = rides.reduce(0) { $0 + $1.energyWh }
+    private var usageCard: some View {
+        let cycles = store.rangeModel.map { history.totalEnergyWh / $0.capacityWh }
         return card {
-            title("All recorded rides", symbol: "sum")
-            HStack(spacing: 0) {
-                StatCell(title: "Rides", value: "\(rides.count)", unit: "")
-                Divider().frame(height: 32)
-                StatCell(title: "Distance", value: units.distance(fromKm: distance).formatted(.number.precision(.fractionLength(0))), unit: units.distanceLabel)
-                Divider().frame(height: 32)
-                StatCell(title: "Energy", value: (energy / 1000).formatted(.number.precision(.fractionLength(1))), unit: "kWh")
+            title("Usage", symbol: "chart.bar.fill")
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)], spacing: 14) {
+                fact("Last 30 days", "\(units.distance(fromKm: history.monthDistanceKm).formatted(.number.precision(.fractionLength(0)))) \(units.distanceLabel) · \(history.monthRides) rides")
+                fact("Energy, 30 days", "\((history.monthEnergyWh / 1000).formatted(.number.precision(.fractionLength(2)))) kWh")
+                fact("All rides", "\(history.rideCount) · \(units.distance(fromKm: history.totalDistanceKm).formatted(.number.precision(.fractionLength(0)))) \(units.distanceLabel)")
+                fact("Energy, all time", "\((history.totalEnergyWh / 1000).formatted(.number.precision(.fractionLength(1)))) kWh")
+                fact("Full charge cycles", cycles.map { "≈ \($0.formatted(.number.precision(.fractionLength(0))))" } ?? "Not yet")
+                fact("Energy per 100 \(units.distanceLabel)", Self.energyPer100(distance: units.distance(fromKm: history.totalDistanceKm), energy: history.totalEnergyWh))
             }
+            note("Charge cycles are the energy used so far divided by the pack capacity.")
         }
+    }
+
+    private static func energyPer100(distance: Double, energy: Double) -> String {
+        guard distance > 0 else { return "–" }
+        let kWh = energy / distance * 100 / 1000
+        return "\(kWh.formatted(.number.precision(.fractionLength(1)))) kWh"
     }
 
     // MARK: Capacity
@@ -258,7 +347,7 @@ struct BatteryView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Set pack capacity").font(.subheadline.weight(.medium))
-                    Text("Optional. Enter the Wh value printed on the battery; 0 lets the app learn it. Pure Flex: 345.6 Wh (36 V, 9.6 Ah).")
+                    Text("Optional. Enter the Wh value printed on the battery; 0 lets the app learn it. Pure Flex: 342 Wh (36 V, 9.5 Ah).")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -327,7 +416,7 @@ private extension View {
                 }
             }
             .chartYAxis {
-                AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.gray.opacity(0.35))
                     AxisValueLabel()
                 }

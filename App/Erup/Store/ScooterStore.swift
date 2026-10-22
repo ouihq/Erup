@@ -30,6 +30,62 @@ struct ScooterSettings: Equatable, Codable {
     }
 }
 
+/// The controller identification last read from the scooter, kept so it stays visible and exportable offline.
+struct FirmwareRecord: Equatable, Codable {
+    var model: String
+    var hardware: String
+    var bootloader: String
+    var firmware: String
+    var uniqueCode: String
+    var readAt: Date
+
+    private static let key = "scooter.firmware.record"
+
+    init(_ info: ControllerInfo, readAt: Date = .now) {
+        model = info.model
+        hardware = info.hardware
+        bootloader = info.bootloader
+        firmware = info.firmware
+        uniqueCode = info.uniqueCode
+        self.readAt = readAt
+    }
+
+    static func stored() -> FirmwareRecord? {
+        UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(FirmwareRecord.self, from: $0) }
+    }
+
+    func save() {
+        if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.key) }
+    }
+
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+}
+
+/// The battery as last seen from the scooter, so the app can still show it when the scooter is off or away.
+struct BatteryReading: Equatable, Codable {
+    var percent: Int
+    var voltage: Double
+    var date: Date
+    /// Discharge current at that moment, positive while riding. Absent in readings saved before 1.3.
+    var current: Double?
+
+    private static let key = "scooter.lastBattery"
+
+    static func stored() -> BatteryReading? {
+        UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(BatteryReading.self, from: $0) }
+    }
+
+    func save() {
+        if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.key) }
+    }
+
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+}
+
 /// One entry in the notification center: an error from the app or an alert about the scooter.
 struct Notice: Identifiable, Equatable {
     enum Kind: Equatable { case problem, alert }
@@ -90,6 +146,8 @@ final class ScooterStore {
     @ObservationIgnored private var lastRegenDate: Date?
     private(set) var isRunningCommand = false
     private(set) var controllerReadout: ControllerReadout?
+    private(set) var firmwareRecord = FirmwareRecord.stored()
+    private(set) var lastBattery = BatteryReading.stored()
     private(set) var isReadingController = false
     var isFrameLoggingEnabled = false
     private(set) var rangeModel: RangeModel?
@@ -195,9 +253,32 @@ final class ScooterStore {
         return value > 0 ? Double(value) : nil
     }
 
+    /// The live battery level, or the last one seen when the scooter isn't sending.
+    var batteryPercent: Int? {
+        (telemetry1 ?? latestTelemetry1)?.batteryPercent ?? lastBattery?.percent
+    }
+
+    var batteryIsLive: Bool { connection.isConnected && (telemetry1 ?? latestTelemetry1) != nil }
+
+    /// When the shown battery level was measured.
+    var batteryDate: Date? { batteryIsLive ? Date() : (lastTelemetryDate ?? lastBattery?.date) }
+
     var rangeKm: Double? {
-        guard let rangeModel, let percent = (telemetry1 ?? latestTelemetry1)?.batteryPercent else { return nil }
+        guard let rangeModel, let percent = batteryPercent else { return nil }
         return rangeModel.rangeKm(batteryPercent: percent)
+    }
+
+    var rangeBandKm: ClosedRange<Double>? {
+        guard let rangeModel, let percent = batteryPercent else { return nil }
+        return rangeModel.rangeBandKm(batteryPercent: percent)
+    }
+
+    private func rememberBattery(from value: Telemetry1) {
+        let now = Date()
+        if let last = lastBattery, last.percent == value.batteryPercent, now.timeIntervalSince(last.date) < 60 { return }
+        let reading = BatteryReading(percent: value.batteryPercent, voltage: value.voltage, date: now, current: value.current)
+        lastBattery = reading
+        reading.save()
     }
 
     func updateRideContext(rangeModel: RangeModel?, lastRide: ScooterSnapshot.RideSummary?) {
@@ -251,6 +332,10 @@ final class ScooterStore {
         settings = ScooterSettings()
         ScooterSettings.clearCache()
         controllerReadout = nil
+        firmwareRecord = nil
+        FirmwareRecord.clear()
+        lastBattery = nil
+        BatteryReading.clear()
         liveHistory.removeAll()
     }
 
@@ -549,6 +634,7 @@ final class ScooterStore {
         case .telemetry1(let value):
             latestTelemetry1 = value
             lastTelemetryDate = Date()
+            rememberBattery(from: value)
             noteBackgroundExecution()
             record(.rx, label: "frame 1", bytes: value.raw)
             onSample?(TelemetrySample(
@@ -858,7 +944,11 @@ final class ScooterStore {
         isReadingController = true
         defer { isReadingController = false }
         do {
-            controllerReadout = try await link.readControllerInfo()
+            let readout = try await link.readControllerInfo()
+            controllerReadout = readout
+            let record = FirmwareRecord(readout.info)
+            firmwareRecord = record
+            record.save()
         } catch is CancellationError {
             return
         } catch {
