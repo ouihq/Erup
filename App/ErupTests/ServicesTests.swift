@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import Erup
 
@@ -100,5 +101,65 @@ final class SnapshotTests: XCTestCase {
         changed.headlightOn.toggle()
         XCTAssertTrue(SnapshotWriter.hasStructuralChange(from: .preview, to: changed))
         XCTAssertTrue(SnapshotWriter.hasStructuralChange(from: nil, to: .preview))
+    }
+}
+
+final class AlertSettingsTests: XCTestCase {
+    private func defaults() -> UserDefaults {
+        let suite = "alert-settings-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return defaults
+    }
+
+    private func reading(battery: Int = 80, controller: Int = 30, motor: Int = 30) -> AlertEngine.Reading {
+        .init(batteryPercent: battery, controllerTemperature: controller, motorTemperature: motor, current: 1, speedKmh: 10, isConnected: true, date: .now)
+    }
+
+    func testNothingStoredGivesTheStandardLimits() {
+        XCTAssertEqual(AlertSettings.limits(in: defaults()), .standard)
+    }
+
+    func testStoredChoicesAreUsedAndZeroSwitchesAnAlertOff() {
+        let defaults = defaults()
+        defaults.set(30, forKey: AlertSettings.batteryLow.key)
+        defaults.set(0, forKey: AlertSettings.motorHot.key)
+        defaults.set(false, forKey: AlertSettings.chargeCompleteKey)
+        let limits = AlertSettings.limits(in: defaults)
+        XCTAssertEqual(limits.batteryLow, 30)
+        XCTAssertNil(limits.motorHot)
+        XCTAssertFalse(limits.chargeComplete)
+    }
+
+    func testAValueOutsideTheChoicesFallsBackToTheDefault() {
+        let defaults = defaults()
+        defaults.set(37, forKey: AlertSettings.controllerHot.key)
+        XCTAssertEqual(AlertSettings.limits(in: defaults).controllerHot, 70)
+    }
+
+    func testTheEngineFollowsTheLimitsItIsGiven() {
+        var engine = AlertEngine()
+        var limits = AlertEngine.Limits.standard
+        limits.controllerHot = 60
+        limits.motorHot = nil
+        XCTAssertEqual(engine.evaluate(reading(controller: 61, motor: 120), limits: limits), [.controllerHot(61)])
+        limits.batteryLow = 40
+        XCTAssertEqual(engine.evaluate(reading(battery: 40), limits: limits), [.batteryLow(40)])
+        limits.batteryLow = nil
+        var quiet = AlertEngine()
+        XCTAssertEqual(quiet.evaluate(reading(battery: 15), limits: limits), [])
+    }
+}
+
+final class RideDisplaySettingsTests: XCTestCase {
+    func testASwitchAddsAndRemovesAName() {
+        var stored = ""
+        let list = Binding(get: { stored }, set: { stored = $0 })
+        let binding = RideDisplaySettings.binding(list, name: "Elevation")
+        XCTAssertFalse(binding.wrappedValue)
+        binding.wrappedValue = true
+        XCTAssertEqual(stored, "Elevation")
+        binding.wrappedValue = false
+        XCTAssertEqual(stored, "")
     }
 }

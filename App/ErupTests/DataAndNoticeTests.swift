@@ -42,7 +42,7 @@ final class DataAndNoticeTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: parent) }
 
         let root = try DataExporter.writePackage(
-            records: rides.map(DataExporter.Record.init), info: .init(appVersion: "1.0", useMiles: false, zydCode: "807688"),
+            records: rides.map(DataExporter.Record.init), info: .init(appVersion: "1.0", useMiles: false, zydCode: "012345"),
             options: .init(detailedFiles: true), in: parent
         )
         let ridesCSV = try String(contentsOf: root.appendingPathComponent("rides.csv"), encoding: .utf8)
@@ -122,6 +122,17 @@ final class DataAndNoticeTests: XCTestCase {
         XCTAssertEqual(try PackedData.decode([RideSample].self, from: plain).count, samples.count, "old plain JSON still reads")
     }
 
+    func testSamplesFromBeforeSensorsStillDecodeAndNewOnesRoundTrip() throws {
+        let old = Data(#"[{"offset":1,"speedKmh":18.5,"powerWatts":200,"batteryPercent":80,"voltage":40.1}]"#.utf8)
+        let decoded = try JSONDecoder().decode([RideSample].self, from: old)
+        XCTAssertNil(decoded[0].controllerTemperature)
+        XCTAssertNil(decoded[0].sensors)
+
+        let sensors = PhoneSensors(altitudeMeters: 3.25, vibrationG: 0.0123456, peakG: 0.4, rotationDegPerSecond: 31.5)
+        let sample = RideSample(offset: 2, speedKmh: 19, powerWatts: 210, batteryPercent: 80, voltage: 40, controllerTemperature: 37, motorTemperature: 41, sensors: sensors)
+        XCTAssertEqual(try PackedData.decode([RideSample].self, from: try PackedData.pack([sample])), [sample])
+    }
+
     func testOldRidesArePackedOnce() throws {
         let container = try ModelContainer(for: Ride.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = container.mainContext
@@ -138,7 +149,39 @@ final class DataAndNoticeTests: XCTestCase {
         XCTAssertEqual(try StorageMaintenance.pack(in: context), 1)
         XCTAssertTrue(PackedData.isPacked(ride.samplesData))
         XCTAssertLessThan(ride.samplesData.count, before / 2)
-        XCTAssertEqual(try ride.decodedSamples(), samples, "packing never changes a value")
+        XCTAssertEqual(try PackedData.decode([RideSample].self, from: ride.samplesData), samples, "packing never changes a value")
         XCTAssertEqual(try StorageMaintenance.pack(in: context), 0, "already packed rides are left alone")
     }
+
+    @MainActor
+    func testLastBatteryIsRememberedAndShownWithoutAScooter() throws {
+        BatteryReading.clear()
+        defer { BatteryReading.clear() }
+        let reading = BatteryReading(percent: 64, voltage: 38.4, date: Date(timeIntervalSinceReferenceDate: 800_000_000), current: 0.3)
+        reading.save()
+        XCTAssertEqual(BatteryReading.stored(), reading)
+        let store = ScooterStore(link: MockScooter(behavior: .init(simulatesRide: false)))
+        XCTAssertEqual(store.batteryPercent, 64, "last known level while nothing is connected")
+        XCTAssertFalse(store.batteryIsLive)
+        XCTAssertEqual(store.batteryDate, reading.date)
+    }
+
+    func testBatteryHistoryIsWorkedOutInOnePass() {
+        let now = Date(timeIntervalSinceReferenceDate: 900_000_000)
+        func entry(_ daysAgo: Double, km: Double, wh: Double, used: Int = 5, resistance: Double? = nil) -> BatteryHistory.Entry {
+            .init(id: UUID(), startedAt: now.addingTimeInterval(-daysAgo * 86_400), distanceKm: km, energyWh: wh, batteryUsed: used, internalResistanceOhm: resistance)
+        }
+        let entries = [entry(1, km: 4, wh: 80, resistance: 0.2), entry(10, km: 6, wh: 150, resistance: 0.4), entry(60, km: 10, wh: 200)]
+        let history = BatteryHistory(entries: entries, now: now)
+        XCTAssertEqual(history.rideCount, 3)
+        XCTAssertEqual(history.totalDistanceKm, 20, accuracy: 1e-9)
+        XCTAssertEqual(history.monthRides, 2, "the 60 day old ride is outside the last 30 days")
+        XCTAssertEqual(history.monthEnergyWh, 230, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(history.consumption).current, 430.0 / 20, accuracy: 1e-9)
+        XCTAssertEqual(history.efficiency.count, 3)
+        XCTAssertLessThan(history.efficiency[0].date, history.efficiency[2].date, "oldest first for drawing")
+        XCTAssertEqual(history.packResistanceOhm, 0.4, accuracy: 1e-9, "the median of the measured values")
+        XCTAssertEqual(BatteryHistory(entries: []).packResistanceOhm, BatteryHistory.typicalResistanceOhm)
+    }
 }
+

@@ -163,6 +163,37 @@ final class RangeEstimatorTests: XCTestCase {
         let model = try XCTUnwrap(RangeEstimator.model(rides: rides, manualCapacityWh: 1000))
         XCTAssertEqual(model.whPerKm, 30, accuracy: 1e-9)
     }
+
+    func testRangeBandUsesTheMiddleHalfOfRecentRides() throws {
+        let rides = [20.0, 25, 30, 35, 100].map { RideEnergyRecord(distanceKm: 4, energyWh: $0 * 4, batteryStart: 90, batteryEnd: 60) }
+        let model = try XCTUnwrap(RangeEstimator.model(rides: rides, manualCapacityWh: 1000))
+        let typical = try XCTUnwrap(model.typicalWhPerKm)
+        XCTAssertEqual(typical.lowerBound, 25, accuracy: 1e-9)
+        XCTAssertEqual(typical.upperBound, 35, accuracy: 1e-9, "the 100 Wh/km outlier does not widen the band")
+        let band = try XCTUnwrap(model.rangeBandKm(batteryPercent: 100))
+        XCTAssertEqual(band.lowerBound, 1000 / 35, accuracy: 1e-9)
+        XCTAssertEqual(band.upperBound, 1000 / 25, accuracy: 1e-9)
+    }
+
+    func testRatedCapacityIsUsedUntilRidesShowMore() throws {
+        let gentle = RideEnergyRecord(distanceKm: 4, energyWh: 80, batteryStart: 90, batteryEnd: 85)
+        let model = try XCTUnwrap(RangeEstimator.model(rides: [gentle], manualCapacityWh: nil, nominalCapacityWh: 342))
+        XCTAssertEqual(model.capacityWh, 342)
+        XCTAssertFalse(model.isCapacityCalibrated)
+        XCTAssertNil(RangeEstimator.model(rides: [gentle], manualCapacityWh: nil), "without a rating there is still nothing to show")
+    }
+
+    func testLearnedCapacityStaysNearTheRating() throws {
+        let noisy = RideEnergyRecord(distanceKm: 10, energyWh: 300, batteryStart: 90, batteryEnd: 60)
+        let model = try XCTUnwrap(RangeEstimator.model(rides: [noisy, noisy], manualCapacityWh: nil, nominalCapacityWh: 342))
+        XCTAssertEqual(model.capacityWh, 342 * 1.2, accuracy: 1e-9, "1000 Wh from coarse readings is capped")
+        XCTAssertTrue(model.isCapacityCalibrated)
+    }
+
+    func testNoBandWithFewRides() throws {
+        let model = try XCTUnwrap(RangeEstimator.model(rides: [ride, ride], manualCapacityWh: 1000))
+        XCTAssertNil(model.rangeBandKm(batteryPercent: 80))
+    }
 }
 
 final class RideMergeTests: XCTestCase {
@@ -205,6 +236,38 @@ final class RideMergeTests: XCTestCase {
         XCTAssertEqual(merged.internalResistanceOhm ?? 0, 0.3, accuracy: 0.0001)
         // 4.5 km over 900 s of riding, not over the 1020 s including the pause.
         XCTAssertEqual(merged.averageSpeedKmh, 18, accuracy: 0.0001)
+    }
+
+    func testMergingKeepsTemperaturesAndPhoneSensorsAndContinuesTheHeight() {
+        func sampled(altitude: Double) -> RideSummary {
+            let base = ride(start: 0, duration: 100, distance: 1)
+            return RideSummary(
+                startedAt: base.startedAt, endedAt: base.endedAt, distanceKm: 1, averageSpeedKmh: 20, maxSpeedKmh: 20,
+                energyWh: 5, batteryStart: 80, batteryEnd: 79, maxControllerTemperature: 40, maxMotorTemperature: 45,
+                internalResistanceOhm: nil,
+                samples: [
+                    RideSample(offset: 0, speedKmh: 10, powerWatts: 100, batteryPercent: 80, voltage: 41, controllerTemperature: 33, motorTemperature: 29,
+                               sensors: PhoneSensors(altitudeMeters: 0, vibrationG: 0.04)),
+                    RideSample(offset: 100, speedKmh: 0, powerWatts: 0, batteryPercent: 79, voltage: 40, controllerTemperature: 34, motorTemperature: 30,
+                               sensors: PhoneSensors(altitudeMeters: altitude, vibrationG: 0.05)),
+                ]
+            )
+        }
+        let first = sampled(altitude: 4)
+        let originSecond = sampled(altitude: 2)
+        let second = RideSummary(
+            startedAt: first.endedAt.addingTimeInterval(60), endedAt: first.endedAt.addingTimeInterval(160), distanceKm: 1, averageSpeedKmh: 20,
+            maxSpeedKmh: 20, energyWh: 5, batteryStart: 79, batteryEnd: 78, maxControllerTemperature: 40, maxMotorTemperature: 45,
+            internalResistanceOhm: nil, samples: originSecond.samples
+        )
+        let merged = second.merged(after: first).samples
+        XCTAssertEqual(merged.count, 4)
+        XCTAssertEqual(merged[2].controllerTemperature, 33)
+        XCTAssertEqual(merged[3].motorTemperature, 30)
+        XCTAssertEqual(merged[2].sensors?.vibrationG, 0.04)
+        // The second part started where the first ended (4 m up), so its own 0 and 2 m become 4 and 6.
+        XCTAssertEqual(merged[2].sensors?.altitudeMeters, 4)
+        XCTAssertEqual(merged[3].sensors?.altitudeMeters, 6)
     }
 
     func testSecondRidesSamplesAreShiftedOntoTheCombinedTimeline() {
@@ -525,3 +588,35 @@ final class RouteColoringTests: XCTestCase {
         XCTAssertEqual(RouteColoring.nearestPoint(toLatitude: 60.0, longitude: 10.0006, in: points), 0, "0.0006 east is only about 0.0003 of ground")
     }
 }
+
+final class BatteryModelTests: XCTestCase {
+    func testNominalCapacityMatchesTheManual() {
+        XCTAssertEqual(BatteryModel.nominalCapacityWh, 342, accuracy: 1e-9)
+    }
+
+    func testStateOfChargeFollowsTheCellCurve() {
+        XCTAssertEqual(BatteryModel.stateOfCharge(openCircuitVoltage: 42.0), 100, accuracy: 1e-9)
+        XCTAssertEqual(BatteryModel.stateOfCharge(openCircuitVoltage: 38.4), 50, accuracy: 1e-9)
+        XCTAssertEqual(BatteryModel.stateOfCharge(openCircuitVoltage: 45), 100)
+        XCTAssertEqual(BatteryModel.stateOfCharge(openCircuitVoltage: 30), 0)
+        let low = BatteryModel.stateOfCharge(openCircuitVoltage: 38.0)
+        let high = BatteryModel.stateOfCharge(openCircuitVoltage: 39.0)
+        XCTAssertLessThan(low, high)
+    }
+
+    func testLoadSagIsAddedBack() {
+        let rested = BatteryModel.openCircuitVoltage(terminal: 37.6, current: 10, resistanceOhm: 0.18)
+        XCTAssertEqual(rested, 39.4, accuracy: 1e-9)
+        XCTAssertEqual(BatteryModel.openCircuitVoltage(terminal: 40, current: -2, resistanceOhm: 0.18), 39.64, accuracy: 1e-9)
+    }
+
+    func testHealthAndChargeTime() {
+        XCTAssertEqual(BatteryModel.stateOfHealth(capacityWh: 307.8), 90, accuracy: 1e-9)
+        XCTAssertEqual(BatteryModel.hoursToFull(percent: 100, capacityWh: 342), 0)
+        let full = BatteryModel.hoursToFull(percent: 0, capacityWh: 342)
+        XCTAssertGreaterThan(full, 4)
+        XCTAssertLessThan(full, 6.5, "close to the 5.75 h in the manual")
+        XCTAssertLessThan(BatteryModel.hoursToFull(percent: 50, capacityWh: 342), full)
+    }
+}
+

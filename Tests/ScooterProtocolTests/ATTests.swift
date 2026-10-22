@@ -49,7 +49,7 @@ final class ATTests: XCTestCase {
         XCTAssertEqual(name.key, "NAME")
 
         XCTAssertEqual(try ATReply.parse(Array("OK+TYPE:B".utf8)).value, "B")
-        XCTAssertEqual(try ATReply.parse(Array("OK+DEVICE[807688 ]".utf8)).value, "807688")
+        XCTAssertEqual(try ATReply.parse(Array("OK+DEVICE[012345 ]".utf8)).value, "012345")
     }
 
     func testUnrecognizedReplyIsAnError() {
