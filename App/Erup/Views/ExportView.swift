@@ -128,7 +128,7 @@ struct ExportView: View {
             do {
                 let chosen = rides.filter { options.includes($0.startedAt) }
                 let records = chosen.map(DataExporter.Record.init)
-                let info = DataExporter.Info(appVersion: AppVersion.display, useMiles: useMiles, zydCode: store.settings.deviceDescription)
+                let info = DataExporter.Info(appVersion: AppVersion.display, useMiles: useMiles, zydCode: store.settings.deviceDescription, firmware: store.firmwareRecord)
                 // Decoding and writing every sample is slow for a long history, so it must not block the screen.
                 let archive = try await Task.detached(priority: .userInitiated) {
                     try DataExporter.makeArchive(records: records, info: info, options: options)

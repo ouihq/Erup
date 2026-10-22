@@ -8,6 +8,7 @@ enum DataExporter {
         var appVersion: String
         var useMiles: Bool
         var zydCode: String?
+        var firmware: FirmwareRecord?
         var exportedAt: Date = .now
     }
 
@@ -91,6 +92,12 @@ enum DataExporter {
             let powerWatts: Double
             let batteryPercent: Int
             let voltage: Double
+            let controllerTemperatureC: Int?
+            let motorTemperatureC: Int?
+            let altitudeMeters: Double?
+            let vibrationG: Double?
+            let peakG: Double?
+            let rotationDegreesPerSecond: Double?
         }
 
         struct Point: Encodable {
@@ -115,6 +122,7 @@ enum DataExporter {
         let app: String
         let usesMiles: Bool
         let zydCode: String?
+        let controller: FirmwareRecord?
         let totals: Totals
         let files: [String]
     }
@@ -142,7 +150,7 @@ enum DataExporter {
             header: "id,started_at,ended_at,duration_s,distance_km,average_speed_kmh,max_speed_kmh,energy_wh,battery_start_pct,battery_end_pct,max_controller_temp_c,max_motor_temp_c,internal_resistance_ohm,has_route"
         ) : nil
         let samplesFile = try options.sensorData
-            ? CSVFile(url: root.appendingPathComponent("samples.csv"), header: "ride_id,offset_s,time,speed_kmh,power_w,battery_pct,voltage_v")
+            ? CSVFile(url: root.appendingPathComponent("samples.csv"), header: "ride_id,offset_s,time,speed_kmh,power_w,battery_pct,voltage_v,controller_temp_c,motor_temp_c,altitude_m,vibration_g,peak_g,rotation_dps")
             : nil
         var files = ["README.txt", "summary.json"]
         if options.rideList { files.append("rides.csv") }
@@ -162,12 +170,7 @@ enum DataExporter {
                     "\(record.batteryStart)", "\(record.batteryEnd)", "\(record.maxControllerTemperature)",
                     "\(record.maxMotorTemperature)", record.internalResistanceOhm.map(number) ?? "", track.isEmpty ? "no" : "yes",
                 ].joined(separator: ",")])
-                try samplesFile?.append(options.sensorData ? samples.map { sample in
-                    [
-                        id, number(sample.offset), iso(record.startedAt.addingTimeInterval(sample.offset)),
-                        number(sample.speedKmh), number(sample.powerWatts), "\(sample.batteryPercent)", number(sample.voltage),
-                    ].joined(separator: ",")
-                } : [])
+                try samplesFile?.append(options.sensorData ? samples.map { csvRow($0, rideID: id, started: record.startedAt) } : [])
 
                 let name = "\(fileStamp(record.startedAt))-\(id.prefix(8))"
                 if options.detailedFiles {
@@ -177,7 +180,7 @@ enum DataExporter {
                         energyWh: record.energyWh, batteryStartPercent: record.batteryStart, batteryEndPercent: record.batteryEnd,
                         maxControllerTemperatureC: record.maxControllerTemperature, maxMotorTemperatureC: record.maxMotorTemperature,
                         internalResistanceOhm: record.internalResistanceOhm,
-                        samples: samples.map { .init(offsetSeconds: $0.offset, speedKmh: $0.speedKmh, powerWatts: $0.powerWatts, batteryPercent: $0.batteryPercent, voltage: $0.voltage) },
+                        samples: samples.map { .init(offsetSeconds: $0.offset, speedKmh: $0.speedKmh, powerWatts: $0.powerWatts, batteryPercent: $0.batteryPercent, voltage: $0.voltage, controllerTemperatureC: $0.controllerTemperature, motorTemperatureC: $0.motorTemperature, altitudeMeters: $0.sensors?.altitudeMeters, vibrationG: $0.sensors?.vibrationG, peakG: $0.sensors?.peakG, rotationDegreesPerSecond: $0.sensors?.rotationDegPerSecond) },
                         route: track.map { .init(latitude: $0.latitude, longitude: $0.longitude, time: $0.timestamp) }
                     )
                     try encoder.encode(exported).write(to: root.appendingPathComponent("rides/\(name).json"))
@@ -193,7 +196,7 @@ enum DataExporter {
         try samplesFile?.close()
 
         let summary = Summary(
-            exportedAt: info.exportedAt, from: options.from, to: options.to, app: info.appVersion, usesMiles: info.useMiles, zydCode: info.zydCode,
+            exportedAt: info.exportedAt, from: options.from, to: options.to, app: info.appVersion, usesMiles: info.useMiles, zydCode: info.zydCode, controller: info.firmware,
             totals: .init(
                 rides: ordered.count,
                 distanceKm: ordered.reduce(0) { $0 + $1.distanceKm },
@@ -252,6 +255,18 @@ enum DataExporter {
         }
         if let coordinationError { throw coordinationError }
         return try outcome.get()
+    }
+
+    private static func csvRow(_ sample: RideSample, rideID: String, started: Date) -> String {
+        let sensors = sample.sensors
+        let optionalInt: (Int?) -> String = { $0.map { "\($0)" } ?? "" }
+        let optionalNumber: (Double?) -> String = { $0.map(number) ?? "" }
+        var fields: [String] = [rideID, number(sample.offset), iso(started.addingTimeInterval(sample.offset))]
+        fields += [number(sample.speedKmh), number(sample.powerWatts), "\(sample.batteryPercent)", number(sample.voltage)]
+        fields += [optionalInt(sample.controllerTemperature), optionalInt(sample.motorTemperature)]
+        fields += [optionalNumber(sensors?.altitudeMeters), optionalNumber(sensors?.vibrationG)]
+        fields += [optionalNumber(sensors?.peakG), optionalNumber(sensors?.rotationDegPerSecond)]
+        return fields.joined(separator: ",")
     }
 
     // MARK: Formatting

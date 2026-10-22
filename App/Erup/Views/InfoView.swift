@@ -6,19 +6,20 @@ struct InfoView: View {
     var body: some View {
         List {
             Section {
-                if let readout = store.controllerReadout {
-                    LabeledContent("Model", value: readout.info.model)
-                    LabeledContent("Hardware", value: readout.info.hardware)
-                    LabeledContent("Bootloader", value: readout.info.bootloader)
-                    LabeledContent("Firmware", value: readout.info.firmware)
-                    LabeledContent("Unique code", value: readout.info.uniqueCode)
+                if let record = store.firmwareRecord {
+                    LabeledContent("Model", value: record.model)
+                    LabeledContent("Hardware", value: record.hardware)
+                    LabeledContent("Bootloader", value: record.bootloader)
+                    LabeledContent("Firmware", value: record.firmware)
+                    LabeledContent("Unique code", value: record.uniqueCode)
                         .textSelection(.enabled)
+                    LabeledContent("Last read", value: record.readAt.formatted(date: .abbreviated, time: .shortened))
                 }
                 Button {
                     Task { await store.readControllerInfo() }
                 } label: {
                     HStack {
-                        Text(store.controllerReadout == nil ? "Read controller info" : "Read again")
+                        Text(store.firmwareRecord == nil ? "Read controller info" : "Read again")
                         if store.isReadingController { Spacer(); ProgressView() }
                     }
                 }
@@ -26,7 +27,7 @@ struct InfoView: View {
             } header: {
                 Text("Controller")
             } footer: {
-                Text("Reading pauses live data for about a second and is only allowed while the scooter is standing still.")
+                Text("Read only: Erup never changes the controller's software. Reading pauses live data for about a second and only works while the scooter is standing still. The result is saved and included in exports.")
             }
 
             if let readout = store.controllerReadout {
