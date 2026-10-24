@@ -32,6 +32,7 @@ struct ErupApp: App {
         WindowGroup {
             RootView()
                 .environment(store)
+                .environment(services.backups)
                 .preferredColorScheme(appearance.colorScheme)
         }
         .modelContainer(container)

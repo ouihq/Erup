@@ -9,6 +9,7 @@ final class AppServices {
     private let notifications = NotificationService()
     private var alerts = AlertEngine()
     private let rides: RideRecorder
+    let backups: BackupScheduler
     private let keepRunning = BackgroundKeepAlive()
     private var defaultsObserver: NSObjectProtocol?
     private var darwinObserver: DarwinObserver?
@@ -18,9 +19,14 @@ final class AppServices {
     init(store: ScooterStore, container: ModelContainer) {
         self.store = store
         rides = RideRecorder(store: store, container: container)
+        backups = BackupScheduler(container: container)
+        rides.onRideStored = { [weak backups] in backups?.rideStored() }
         store.onSample = { [weak rides] sample in rides?.ingest(sample) }
         store.onBackground = { [weak rides] in rides?.persistDraftNow() }
-        store.onForeground = { [weak self] in self?.refreshKeepRunning() }
+        store.onForeground = { [weak self] in
+            self?.refreshKeepRunning()
+            self?.backups.appBecameActive()
+        }
         // The setting lives in UserDefaults, so changing it in Settings takes effect at once.
         defaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main
@@ -34,6 +40,7 @@ final class AppServices {
         let report: @MainActor (String) -> Void = { [weak store] message in store?.report(message) }
         snapshots.onError = report
         keepRunning.onError = report
+        backups.onError = report
         liveActivity.onError = report
         notifications.onError = report
 

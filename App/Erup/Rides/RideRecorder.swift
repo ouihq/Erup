@@ -24,6 +24,8 @@ final class RideRecorder {
     private let context: ModelContext
     private let track = TrackRecorder()
     private let motion = MotionRecorder()
+    /// Called once a finished ride is stored, so a backup can follow.
+    var onRideStored: (() -> Void)?
     private var detector = RideDetector(configuration: RideSettings.detectorConfiguration)
     private var finishTask: Task<Void, Never>?
     private var wasConnected = false
@@ -172,6 +174,7 @@ final class RideRecorder {
             return
         }
         refreshRideContext()
+        onRideStored?()
     }
 
     /// The ride turned out too short to keep. Remove what was stored for it and restore an earlier ride it was merged into.
