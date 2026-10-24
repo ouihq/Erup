@@ -53,6 +53,19 @@ targets:
           - bluetooth-central
           - location
         NSSupportsLiveActivities: true
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: me.ouihq.erup.backup
+            UTTypeDescription: Erup backup
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - erupbackup
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Erup backup
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - me.ouihq.erup.backup
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

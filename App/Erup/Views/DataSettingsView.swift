@@ -28,13 +28,23 @@ struct DataSettingsView: View {
             }
 
             Section {
+                NavigationLink {
+                    BackupSettingsView()
+                } label: {
+                    Label("Backup and restore", systemImage: "icloud.and.arrow.up")
+                }
+            } footer: {
+                Text("Keep a copy of your rides in iCloud Drive or a file, and put it back after reinstalling Erup.")
+            }
+
+            Section {
                 Button {
                     showsExport = true
                 } label: {
                     Label("Export data…", systemImage: "square.and.arrow.up")
                 }
             } footer: {
-                Text("Save rides, sensor data and routes for a period you choose as a zip file.")
+                Text("Save rides, sensor data and routes for a period you choose as a zip of plain files, to open in a spreadsheet. It can't be restored into Erup; use a backup for that.")
             }
 
             Section {

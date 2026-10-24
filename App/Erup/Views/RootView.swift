@@ -4,6 +4,8 @@ import SwiftUI
 struct RootView: View {
     @Environment(ScooterStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
+    /// A backup opened from Files.
+    @State private var openedBackup: RestoreSource?
 
     var body: some View {
         // The app is usable without a scooter: rides, battery history and settings stay available.
@@ -34,6 +36,10 @@ struct RootView: View {
         }
         .safeAreaInset(edge: .top) { AlertBanner() }
         .animation(.default, value: store.alertMessage)
+        .onOpenURL { url in
+            if url.pathExtension == BackupFolder.fileExtension { openedBackup = .file(url) }
+        }
+        .sheet(item: $openedBackup) { RestoreFlowView(source: $0) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 store.isInForeground = true
