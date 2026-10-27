@@ -23,9 +23,11 @@
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/dashboard.png",
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/rides.png",
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/map.png",
-        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/charts.png",
+        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/ride-detail.png",
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/battery.png",
-        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/connection.png"
+        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/health.png",
+        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/alerts.png",
+        "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/backup.png"
       ],
       "version": "1.5.0",
       "versionDate": "2026-10-24",

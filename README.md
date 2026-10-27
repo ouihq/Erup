@@ -15,18 +15,26 @@
 [Install](#install) · [Features](#features) · [Safety](#safety) · [Your data](#your-data) · [Build](#building-from-source) · [Contributing](#contributing)
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" width="260" alt="Live dashboard with speedometer, gear, light, cruise and lock">
-  &nbsp;
-  <img src="docs/screenshots/rides.png" width="260" alt="Ride history with daily totals and statistics">
-  &nbsp;
-  <img src="docs/screenshots/map.png" width="260" alt="Ride route on a map, colored by speed">
+  <img src="docs/screenshots/banner.png" width="800" alt="Erup, the companion app for the Pure Flex scooter">
 </p>
 <p align="center">
-  <img src="docs/screenshots/charts.png" width="260" alt="Ride charts with a draggable line and measured regenerative braking">
+  <img src="docs/screenshots/dashboard.png" width="250" alt="Live dashboard with speedometer, power, gear, light, cruise and lock">
   &nbsp;
-  <img src="docs/screenshots/battery.png" width="260" alt="Battery, efficiency and pack health">
+  <img src="docs/screenshots/rides.png" width="250" alt="Ride history with weekly totals and statistics">
   &nbsp;
-  <img src="docs/screenshots/connection.png" width="260" alt="Connection and ride detection settings">
+  <img src="docs/screenshots/map.png" width="250" alt="Ride route on a map, coloured by speed">
+</p>
+<p align="center">
+  <img src="docs/screenshots/ride-detail.png" width="250" alt="Ride detail tiles and a foldable power chart with regenerative braking">
+  &nbsp;
+  <img src="docs/screenshots/battery.png" width="250" alt="Battery page with distance per charge and the list of charges">
+  &nbsp;
+  <img src="docs/screenshots/health.png" width="250" alt="Efficiency per ride and battery health ring with internal resistance">
+</p>
+<p align="center">
+  <img src="docs/screenshots/alerts.png" width="250" alt="Configurable coloured alerts, including a custom motor temperature alert">
+  &nbsp;
+  <img src="docs/screenshots/backup.png" width="250" alt="Backup and restore with a backup file and an iCloud Drive folder">
 </p>
 
 Live speed and battery at a glance, rides that log themselves, widgets, a Live Activity and Control Center toggles, all over a Bluetooth link that reconnects on its own. Quick to open, quiet in the background, and fully usable with larger text and VoiceOver.
