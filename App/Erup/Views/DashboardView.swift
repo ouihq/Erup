@@ -186,6 +186,14 @@ struct ToggleRow: View {
     @Environment(ScooterStore.self) private var store
 
     var body: some View {
+        VStack(spacing: 8) {
+            tiles
+            if store.cruiseOn { CruiseHint() }
+        }
+        .animation(.snappy, value: store.cruiseOn)
+    }
+
+    private var tiles: some View {
         AdaptiveStack(spacing: 12) {
             ToggleTile(title: "Light", symbol: "headlight.high.beam.fill", isOn: store.headlightOn) {
                 store.setHeadlight(!store.headlightOn)
@@ -202,6 +210,23 @@ struct ToggleRow: View {
             }
         }
         .disabled(!store.isReady)
+    }
+}
+
+/// The cruise switch only allows cruise control. The controller starts it itself, as the official app's own help text says.
+struct CruiseHint: View {
+    var body: some View {
+        Label {
+            Text("Cruise control is on. To start it, hold the throttle steady for 5 seconds until you hear the beeps.")
+        } icon: {
+            Image(systemName: "gauge.with.dots.needle.67percent")
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -329,7 +354,8 @@ struct AlertBanner: View {
     var body: some View {
         if let message = store.alertMessage {
             HStack(alignment: .center, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.secondary)
+                Image(systemName: store.alertSeverity?.symbol ?? "exclamationmark.triangle.fill")
+                    .foregroundStyle(store.alertSeverity?.color ?? Color.secondary)
                 Text(message)
                     .font(.footnote.weight(.medium))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -349,6 +375,7 @@ struct AlertBanner: View {
             .padding(.vertical, 2)
             .padding(.trailing, 2)
             .cardBackground(cornerRadius: 14)
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder((store.alertSeverity?.color ?? .clear).opacity(0.6), lineWidth: 1.5))
             .padding(.horizontal, 16)
             .transition(.move(edge: .top).combined(with: .opacity))
             .onAppear { AccessibilityNotification.Announcement(message).post() }
