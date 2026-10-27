@@ -595,18 +595,23 @@ struct RideSeriesChart: View, Equatable {
         Button(action: onToggle) {
             HStack(spacing: 12) {
                 Image(systemName: metric.symbol).foregroundStyle(tint).frame(width: 28)
+                let scrubbing = isExpanded && selected != nil
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(metric.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                    Text("Avg \(format(series.average * scale)) · Max \(format(series.maximum * scale)) \(unit)")
-                        .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
-                    if let recoveredText, !isExpanded || selected == nil {
-                        Text("Recovery \(recoveredText)")
-                            .font(.caption2).foregroundStyle(Palette.battery).monospacedDigit().lineLimit(1)
+                    Text(metric.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                    // While a finger is down the reading needs the room, so the summary steps aside.
+                    if !scrubbing {
+                        Text("Avg \(format(series.average * scale)) · Max \(format(series.maximum * scale)) \(unit)")
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                        if let recoveredText {
+                            Text("Recovery \(recoveredText)")
+                                .font(.caption2).foregroundStyle(Palette.battery).monospacedDigit().lineLimit(1)
+                        }
                     }
                 }
+                .layoutPriority(0)
                 Spacer(minLength: 8)
                 if isExpanded {
-                    if let selected { reading(selected) }
+                    if let selected { reading(selected).fixedSize().layoutPriority(1) }
                 } else {
                     MiniLines(series: [(series.drawn.map { $0.value * scale }, tint)]).frame(width: 64, height: 28)
                 }
