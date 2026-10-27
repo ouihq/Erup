@@ -145,7 +145,7 @@ extension Ride {
             let ride = Ride(
                 startedAt: rideStart, endedAt: rideStart.addingTimeInterval(600),
                 distanceKm: 3 + Double(day), averageSpeedKmh: 18, maxSpeedKmh: 21, energyWh: Double(60 + day * 14),
-                batteryStart: 80, batteryEnd: 70 - day, maxControllerTemperature: 41, maxMotorTemperature: 48,
+                batteryStart: [44, 54, 64, 75, 86, 96][day], batteryEnd: [34, 44, 54, 64, 75, 86][day], maxControllerTemperature: 41, maxMotorTemperature: 48,
                 internalResistanceOhm: 0.18 + Double(day) * 0.004,
                 samplesData: try! PackedData.pack(samples), trackData: try! PackedData.pack(track)
             )
@@ -159,7 +159,9 @@ extension Ride {
             let ride = Ride(
                 startedAt: when, endedAt: when.addingTimeInterval(distance * 190),
                 distanceKm: distance, averageSpeedKmh: 17 + Double(index % 4), maxSpeedKmh: 20 + Double((index * 5) % 12),
-                energyWh: distance * (14 + Double(index % 5)), batteryStart: 90, batteryEnd: 80 - index % 12,
+                energyWh: distance * (14 + Double(index % 5)),
+                // Four rides to a charge: the oldest of each group starts full, the rest carry on from where the one before ended.
+                batteryStart: 96 - (3 - index % 4) * 18, batteryEnd: 78 - (3 - index % 4) * 18,
                 maxControllerTemperature: 40, maxMotorTemperature: 46, internalResistanceOhm: 0.18,
                 samplesData: try! PackedData.pack(samples), trackData: nil
             )

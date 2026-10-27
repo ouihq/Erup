@@ -20,12 +20,17 @@ public struct RangeModel: Equatable, Sendable {
     public let isCapacityCalibrated: Bool
     /// Consumption of the rider's typical (middle half of) recent rides, lowest first. Nil with too few rides to say.
     public let typicalWhPerKm: ClosedRange<Double>?
+    /// How many charges the capacity was worked out from. Zero when it is the rating, a value the rider set, or learned from single rides.
+    public let calibrationCycles: Int
 
-    public init(whPerKm: Double, capacityWh: Double, isCapacityCalibrated: Bool, typicalWhPerKm: ClosedRange<Double>? = nil) {
+    public init(
+        whPerKm: Double, capacityWh: Double, isCapacityCalibrated: Bool, typicalWhPerKm: ClosedRange<Double>? = nil, calibrationCycles: Int = 0
+    ) {
         self.whPerKm = whPerKm
         self.capacityWh = capacityWh
         self.isCapacityCalibrated = isCapacityCalibrated
         self.typicalWhPerKm = typicalWhPerKm
+        self.calibrationCycles = calibrationCycles
     }
 
     /// The likely range: the best and worst end of the rider's typical consumption.
@@ -49,6 +54,11 @@ public enum RangeEstimator {
     public static let minimumTotalDistanceKm = 3.0
     public static let minimumCalibrationRideUse = 10
     public static let minimumCalibrationTotalUse = 20
+    /// A charge must use at least this many battery points to say anything about the capacity. Levels are whole percents,
+    /// so over 25 points the rounding is a few percent at worst, against ten percent for a ride that used ten.
+    public static let minimumCycleUse = 25
+    /// Only the newest charges count, since the capacity of a pack changes slowly but does change.
+    public static let calibrationCycleLimit = 6
 
     /// `rides` must be ordered newest first.
     public static func model(rides: [RideEnergyRecord], manualCapacityWh: Double?, nominalCapacityWh: Double? = nil) -> RangeModel? {
@@ -62,18 +72,52 @@ public enum RangeEstimator {
         if let manualCapacityWh, manualCapacityWh > 0 {
             return RangeModel(whPerKm: whPerKm, capacityWh: manualCapacityWh, isCapacityCalibrated: false, typicalWhPerKm: typical)
         }
+        if let learned = capacityFromCharges(rides) {
+            return RangeModel(
+                whPerKm: whPerKm, capacityWh: clamped(learned.capacityWh, nominalCapacityWh), isCapacityCalibrated: true,
+                typicalWhPerKm: typical, calibrationCycles: learned.cycles
+            )
+        }
         let calibration = usable.filter { $0.batteryStart - $0.batteryEnd >= minimumCalibrationRideUse }
         let usedPoints = calibration.reduce(0) { $0 + ($1.batteryStart - $1.batteryEnd) }
         guard usedPoints >= minimumCalibrationTotalUse else {
             // Not enough battery use to learn the capacity yet: the pack's rated capacity is the best guess.
             return nominalCapacityWh.map { RangeModel(whPerKm: whPerKm, capacityWh: $0, isCapacityCalibrated: false, typicalWhPerKm: typical) }
         }
-        var capacity = calibration.reduce(0) { $0 + $1.energyWh } / (Double(usedPoints) / 100)
-        if let nominalCapacityWh {
-            // Whole-percent readings make single rides noisy; a real pack stays close to its rating.
-            capacity = min(max(capacity, nominalCapacityWh * 0.5), nominalCapacityWh * 1.2)
+        let capacity = calibration.reduce(0) { $0 + $1.energyWh } / (Double(usedPoints) / 100)
+        return RangeModel(whPerKm: whPerKm, capacityWh: clamped(capacity, nominalCapacityWh), isCapacityCalibrated: true, typicalWhPerKm: typical)
+    }
+
+    /// Whole-percent readings make single rides noisy; a real pack stays close to its rating.
+    private static func clamped(_ capacity: Double, _ nominal: Double?) -> Double {
+        guard let nominal else { return capacity }
+        return min(max(capacity, nominal * 0.5), nominal * 1.2)
+    }
+
+    /// The capacity from whole charges: the energy used between two charges over the share of the battery it took. A charge
+    /// is told from the next by the level rising by `ChargeCycles.chargeJump` points or more between two rides.
+    /// `rides` must be ordered newest first.
+    static func capacityFromCharges(_ rides: [RideEnergyRecord]) -> (capacityWh: Double, cycles: Int)? {
+        var groups: [[RideEnergyRecord]] = []
+        for ride in rides {
+            if let oldest = groups.last?.last, oldest.batteryStart - ride.batteryEnd < ChargeCycles.chargeJump {
+                groups[groups.count - 1].append(ride)
+            } else {
+                groups.append([ride])
+            }
         }
-        return RangeModel(whPerKm: whPerKm, capacityWh: capacity, isCapacityCalibrated: true, typicalWhPerKm: typical)
+        var energy = 0.0, used = 0.0, count = 0
+        for group in groups {
+            guard let newest = group.first, let oldest = group.last else { continue }
+            let drop = oldest.batteryStart - newest.batteryEnd
+            let groupEnergy = group.reduce(0) { $0 + max($1.energyWh, 0) }
+            guard drop >= minimumCycleUse, groupEnergy > 0 else { continue }
+            energy += groupEnergy
+            used += Double(drop)
+            count += 1
+            if count == calibrationCycleLimit { break }
+        }
+        return count > 0 ? (energy / (used / 100), count) : nil
     }
 
     /// First and third quartile of the per-ride consumption, so one unusual ride doesn't stretch the band.

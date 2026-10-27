@@ -10,28 +10,44 @@ struct BatteryView: View {
     @State private var history = BatteryHistory.empty
     @AppStorage("useMiles") private var useMiles = false
     @AppStorage(RideRecorder.capacityKey) private var manualCapacityWh = 0.0
+    @State private var openCycle: Int?
+    @State private var showsAllCycles = false
 
     private var units: Units { Units(useMiles: useMiles) }
 
     /// The rides without their samples and routes, which this page never reads.
     private static var rideDescriptor: FetchDescriptor<Ride> {
         var descriptor = FetchDescriptor<Ride>(sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
-        descriptor.propertiesToFetch = [\.id, \.startedAt, \.distanceKm, \.energyWh, \.batteryStart, \.batteryEnd, \.internalResistanceOhm]
+        descriptor.propertiesToFetch = [\.id, \.startedAt, \.endedAt, \.distanceKm, \.energyWh, \.batteryStart, \.batteryEnd, \.maxSpeedKmh, \.regenWh, \.internalResistanceOhm]
         return descriptor
     }
 
     /// Changes whenever a ride is added, finished or extended by a joined ride.
     private var historyKey: [Double] {
-        [Double(rides.count), rides.first?.distanceKm ?? 0, rides.first?.energyWh ?? 0]
+        [Double(rides.count), rides.first?.distanceKm ?? 0, rides.first?.energyWh ?? 0, Double(rides.first?.batteryEnd ?? 0)]
     }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 nowCard
-                usageCard
+
+                sectionHeader("Charges", "Every charge to the next, worked out from your rides")
+                currentCycleCard
+                if history.cycles.count > 1 { cycleChartCard }
+                if history.cycles.count > 1 { earlierCyclesCard }
+
+                sectionHeader("Efficiency")
                 efficiencyCard
+
+                sectionHeader("Battery health")
                 healthCard
+
+                sectionHeader("Usage")
+                statCard(usageTiles)
+
+                sectionHeader("Battery info")
+                infoCard
                 capacityCard
             }
             .padding(.horizontal, 16)
@@ -47,8 +63,9 @@ struct BatteryView: View {
 
     private func makeHistory() -> BatteryHistory {
         BatteryHistory(entries: rides.map {
-            .init(id: $0.id, startedAt: $0.startedAt, distanceKm: $0.distanceKm, energyWh: $0.energyWh,
-                  batteryUsed: $0.batteryUsed, internalResistanceOhm: $0.internalResistanceOhm)
+            .init(id: $0.id, startedAt: $0.startedAt, endedAt: $0.endedAt, distanceKm: $0.distanceKm, energyWh: $0.energyWh,
+                  batteryStart: $0.batteryStart, batteryEnd: $0.batteryEnd, maxSpeedKmh: $0.maxSpeedKmh, regenWh: $0.regenWh,
+                  internalResistanceOhm: $0.internalResistanceOhm)
         })
     }
 
@@ -58,7 +75,7 @@ struct BatteryView: View {
 
     private var levelTint: Color {
         guard let percent else { return .gray }
-        return percent <= 15 ? .red : percent <= 30 ? .yellow : Palette.battery
+        return AlertRuleCenter.shared.severity(for: .battery, value: Double(percent))?.color ?? Palette.battery
     }
 
     private var activity: String? {
@@ -68,7 +85,7 @@ struct BatteryView: View {
         return "Resting"
     }
 
-    @ScaledMetric(relativeTo: .largeTitle) private var percentSize: CGFloat = 48
+    @ScaledMetric(relativeTo: .largeTitle) private var percentSize: CGFloat = 52
 
     private var nowCard: some View {
         card {
@@ -98,19 +115,29 @@ struct BatteryView: View {
                 .opacity(store.batteryIsLive ? 1 : 0.6)
                 .motionSafeAnimation(.smooth, value: percent)
             Divider()
-            LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)], spacing: 14) {
-                fact("Range", rangeText)
-                fact("Energy left", energyLeftText)
-                fact(store.batteryIsLive ? "Voltage" : "Voltage (last)", voltageText)
-                fact(timeTitle, timeText)
-                fact("Level from voltage", voltageLevelText)
-                fact("Last ride", lastRideText)
-                fact("Pack capacity", store.rangeModel.map { "\(Int($0.capacityWh.rounded())) Wh" } ?? "Not yet")
-            }
+            statCells(nowTiles)
             if store.rangeKm == nil {
                 note("Range appears after about 3 km of riding, once the app has learned how much energy you use.")
             }
         }
+    }
+
+    private var nowTiles: [Tile] {
+        [
+            Tile(title: "Range", value: rangeText, note: store.rangeBandKm == nil ? "from your own rides" : "likely, from your rides",
+                 symbol: "road.lanes", tint: Palette.battery),
+            Tile(title: "Energy left", value: energyLeftText, note: store.rangeModel.map { "of a \(Int($0.capacityWh.rounded())) Wh pack" } ?? "learned from rides",
+                 symbol: "bolt.fill", tint: Palette.power),
+            Tile(title: timeTitle, value: timeText, note: timeNote, symbol: "clock.fill", tint: Palette.speed),
+            Tile(title: store.batteryIsLive ? "Voltage" : "Voltage (last)", value: voltageText,
+                 note: voltageLevel.map { "≈ \($0.formatted(.number.precision(.fractionLength(0)))) % by voltage" } ?? "level by voltage under load",
+                 symbol: "waveform.path.ecg", tint: Palette.voltage),
+        ]
+    }
+
+    private var timeNote: String {
+        if let power, power < -15 { return "at the charging power now" }
+        return power.map { $0 > 30 ? "at the current draw" : "appears while riding" } ?? "appears while riding"
     }
 
     private var voltage: Double? { store.telemetry1?.voltage ?? store.lastBattery?.voltage }
@@ -131,10 +158,6 @@ struct BatteryView: View {
         guard abs(current) < 6 else { return nil }
         let open = BatteryModel.openCircuitVoltage(terminal: terminal, current: current, resistanceOhm: history.packResistanceOhm)
         return BatteryModel.stateOfCharge(openCircuitVoltage: open)
-    }
-
-    private var voltageLevelText: String {
-        voltageLevel.map { "≈ \($0.formatted(.number.precision(.fractionLength(0)))) %" } ?? "Under load"
     }
 
     private var voltageText: String {
@@ -174,14 +197,193 @@ struct BatteryView: View {
         return "\(shown(range)) \(units.distanceLabel)"
     }
 
-    private var lastRideText: String {
-        guard let ride = history.lastRide else { return "–" }
-        return "−\(ride.batteryUsed)% · \(units.distance(fromKm: ride.distanceKm).formatted(.number.precision(.fractionLength(1)))) \(units.distanceLabel)"
-    }
-
     private var energyLeftText: String {
         guard let model = store.rangeModel, let percent else { return "Not yet" }
         return "\(Int((model.capacityWh * Double(percent) / 100).rounded())) Wh"
+    }
+
+    // MARK: Charges
+
+    /// The newest cycle, or an empty one when the battery is clearly fuller than the last ride left it.
+    private var chargedSinceLastRide: Bool {
+        guard let last = history.cycles.last, let percent else { return false }
+        return ChargeCycles.isChargedSinceLastRide(lastRideEnd: last.endPercent, currentPercent: percent)
+    }
+
+    @ViewBuilder
+    private var currentCycleCard: some View {
+        if let cycle = history.cycles.last {
+            if chargedSinceLastRide {
+                card {
+                    HStack(spacing: 12) {
+                        Image(systemName: "bolt.badge.checkmark.fill").font(.title2).foregroundStyle(Palette.battery)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Charged, not ridden yet").font(.subheadline.weight(.semibold))
+                            Text("The last ride ended at \(cycle.endPercent)%, the battery is at \(percent ?? 0)% now. The next ride starts a new charge.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Since the last charge").font(.subheadline.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 4)
+                    statCard(cycleTiles(cycle))
+                }
+            }
+        } else {
+            card {
+                note("Your charges show up here once you have ridden. A new charge is spotted when a ride starts with clearly more battery than the one before it ended with.")
+            }
+        }
+    }
+
+    private func cycleTiles(_ cycle: ChargeCycles.Cycle) -> [Tile] {
+        var tiles = [
+            Tile(title: "Distance", value: distanceText(cycle.distanceKm),
+                 note: cycle.projectedRangeKm.map { "≈ \(distanceText($0)) on a full charge" } ?? "since the charge",
+                 symbol: "road.lanes", tint: Palette.speed),
+            Tile(title: "Battery used", value: "\(cycle.startPercent)% → \(cycle.endPercent)%", note: "\(cycle.usedPercent)% of the pack",
+                 symbol: "battery.50percent", tint: Palette.battery),
+            Tile(title: "Energy used", value: "\(Int(cycle.energyWh.rounded())) Wh",
+                 note: cycle.whPerKm.map { "\(Int(units.perDistance($0).rounded())) Wh/\(units.distanceLabel)" } ?? "efficiency appears after 0.5 km",
+                 symbol: "bolt.fill", tint: Palette.power),
+            Tile(title: "Rides", value: "\(cycle.rideCount)", note: durationText(cycle.ridingTime) + " riding",
+                 symbol: "figure.outdoor.cycle", tint: Palette.speed),
+        ]
+        if let regen = cycle.regenWh, regen >= 0.5 {
+            tiles.append(Tile(title: "Recovered", value: "+\(regen.formatted(.number.precision(.fractionLength(1)))) Wh",
+                              note: cycle.energyWh > 0 ? "\(Int((regen / cycle.energyWh * 100).rounded()))% of the energy used" : "by braking",
+                              symbol: "leaf.arrow.circlepath", tint: Palette.battery, valueTint: Palette.battery))
+            tiles.append(Tile(title: "Top speed", value: speedText(cycle.maxSpeedKmh), note: "in this charge", symbol: "gauge.with.needle.fill", tint: Palette.speed))
+        }
+        return tiles
+    }
+
+    private func distanceText(_ km: Double) -> String {
+        "\(units.distance(fromKm: km).formatted(.number.precision(.fractionLength(km < 10 ? 1 : 0)))) \(units.distanceLabel)"
+    }
+
+    private func speedText(_ kmh: Double) -> String {
+        "\(units.speed(fromKmh: kmh).formatted(.number.precision(.fractionLength(0)))) \(units.speedLabel)"
+    }
+
+    private func durationText(_ seconds: TimeInterval) -> String {
+        let minutes = Int((seconds / 60).rounded())
+        return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(minutes) min"
+    }
+
+    private var cycleChartCard: some View {
+        let shown = Array(history.cycles.suffix(12))
+        return card {
+            title("Distance per charge", symbol: "chart.bar.fill")
+            Chart {
+                ForEach(shown) { cycle in
+                    BarMark(x: .value("Charge", cycle.number), y: .value("Distance", units.distance(fromKm: cycle.distanceKm)), width: .fixed(14))
+                        .foregroundStyle(cycle.number == history.cycles.last?.number
+                                         ? AnyShapeStyle(Palette.battery)
+                                         : AnyShapeStyle(LinearGradient(colors: [Palette.battery.opacity(0.75), Palette.battery.opacity(0.4)], startPoint: .top, endPoint: .bottom)))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+            }
+            .chartXAxis {
+                AxisMarks(values: shown.map(\.number)) { value in
+                    AxisValueLabel { if let number = value.as(Int.self) { Text("\(number)") } }
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.gray.opacity(0.35))
+                    AxisValueLabel()
+                }
+            }
+            .chartXScale(domain: Double((shown.first?.number ?? 1) - 1)...Double((shown.last?.number ?? 1) + 1))
+            .chartPlotStyle { $0.clipped() }
+            .frame(height: 130)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Distance ridden on each charge")
+            .accessibilityValue("Last \(shown.count) charges, the latest \(distanceText(shown.last?.distanceKm ?? 0))")
+            note("\(units.distanceLabel) ridden between two charges, oldest on the left. The green bar is the charge you are on.")
+        }
+    }
+
+    private var earlierCyclesCard: some View {
+        let earlier = Array(history.cycles.dropLast().reversed())
+        let visible = showsAllCycles ? earlier : Array(earlier.prefix(5))
+        return VStack(spacing: 0) {
+            ForEach(Array(visible.enumerated()), id: \.element.id) { index, cycle in
+                if index > 0 { Divider().padding(.leading, 14) }
+                cycleRow(cycle)
+            }
+            if earlier.count > 5 {
+                Divider().padding(.leading, 14)
+                Button {
+                    withAnimation(.snappy) { showsAllCycles.toggle() }
+                } label: {
+                    Text(showsAllCycles ? "Show fewer" : "Show all \(earlier.count) earlier charges")
+                        .font(.subheadline.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .cardBackground(cornerRadius: 16)
+    }
+
+    private func cycleRow(_ cycle: ChargeCycles.Cycle) -> some View {
+        let isOpen = openCycle == cycle.number
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.snappy) { openCycle = isOpen ? nil : cycle.number }
+            } label: {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cycleDates(cycle)).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                        Text("\(cycle.rideCount) \(cycle.rideCount == 1 ? "ride" : "rides") · \(distanceText(cycle.distanceKm))\(cycle.whPerKm.map { " · \(Int(units.perDistance($0).rounded())) Wh/\(units.distanceLabel)" } ?? "")")
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                    Spacer(minLength: 8)
+                    Text("\(cycle.startPercent)% → \(cycle.endPercent)%")
+                        .font(.footnote.weight(.medium)).monospacedDigit().foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+
+            if isOpen {
+                statCells(cycleDetailTiles(cycle))
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 12)
+            }
+        }
+    }
+
+    private func cycleDetailTiles(_ cycle: ChargeCycles.Cycle) -> [Tile] {
+        var tiles = [
+            Tile(title: "Energy used", value: "\(Int(cycle.energyWh.rounded())) Wh", note: "\(cycle.usedPercent)% of the pack", symbol: "bolt.fill", tint: Palette.power),
+            Tile(title: "Riding time", value: durationText(cycle.ridingTime), note: "\(cycle.rideCount) \(cycle.rideCount == 1 ? "ride" : "rides")", symbol: "clock.fill", tint: Palette.speed),
+            Tile(title: "Top speed", value: speedText(cycle.maxSpeedKmh), note: "in this charge", symbol: "gauge.with.needle.fill", tint: Palette.speed),
+        ]
+        if let projected = cycle.projectedRangeKm {
+            tiles.append(Tile(title: "Full-charge range", value: distanceText(projected), note: "worked out from this charge", symbol: "road.lanes", tint: Palette.battery))
+        } else if let regen = cycle.regenWh, regen >= 0.5 {
+            tiles.append(Tile(title: "Recovered", value: "+\(regen.formatted(.number.precision(.fractionLength(1)))) Wh", note: "by braking", symbol: "leaf.arrow.circlepath", tint: Palette.battery, valueTint: Palette.battery))
+        }
+        return tiles
+    }
+
+    private func cycleDates(_ cycle: ChargeCycles.Cycle) -> String {
+        let calendar = Calendar.current
+        let start = cycle.startedAt.formatted(.dateTime.day().month(.abbreviated))
+        if calendar.isDate(cycle.startedAt, inSameDayAs: cycle.endedAt) { return start }
+        return "\(start) – \(cycle.endedAt.formatted(.dateTime.day().month(.abbreviated)))"
     }
 
     // MARK: Efficiency
@@ -190,52 +392,86 @@ struct BatteryView: View {
 
     @ViewBuilder
     private var efficiencyCard: some View {
-        let measured = history.efficiency
-        card {
-            title("Efficiency", symbol: "leaf.fill")
+        let measured = Array(history.efficiency.suffix(14))
+        VStack(alignment: .leading, spacing: 0) {
             if let consumption {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(units.perDistance(consumption.current), format: .number.precision(.fractionLength(0)))
-                        .font(.system(.largeTitle, design: .rounded, weight: .semibold))
-                        .monospacedDigit()
-                    Text("Wh/\(units.distanceLabel)").font(.subheadline).foregroundStyle(.secondary)
-                    Spacer()
-                    if let delta = deltaText(consumption) {
-                        Text(delta.text)
-                            .font(.footnote.weight(.medium))
-                            .foregroundStyle(delta.better ? Palette.battery : .red)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(units.perDistance(consumption.current), format: .number.precision(.fractionLength(0)))
+                            .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                            .monospacedDigit()
+                        Text("Wh/\(units.distanceLabel)").font(.subheadline).foregroundStyle(.secondary)
+                        Spacer()
+                        if let delta = deltaText(consumption) {
+                            Text(delta.text)
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(delta.better ? Palette.battery : .orange)
+                        }
                     }
+                    note("Energy per \(units.distanceLabel) over your last 10 rides. Lower means a longer range.")
+                }
+                .padding(14)
+                if measured.count > 1 {
+                    efficiencyChart(measured, average: units.perDistance(consumption.current))
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 14)
                 }
                 if let best = measured.map(\.whPerKm).min(), let worst = measured.map(\.whPerKm).max() {
-                    HStack(spacing: 0) {
-                        fact("Best ride", "\(Int(units.perDistance(best).rounded())) Wh/\(units.distanceLabel)")
-                        fact("Worst ride", "\(Int(units.perDistance(worst).rounded())) Wh/\(units.distanceLabel)")
-                    }
-                }
-                Text("Average of your last 10 rides. Lower is better.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                if measured.count > 1 {
-                    Chart {
-                        ForEach(measured) { ride in
-                            BarMark(x: .value("Date", ride.date), y: .value("Wh", units.perDistance(ride.whPerKm)), width: .fixed(12))
-                                .foregroundStyle(LinearGradient(colors: [Palette.battery, Palette.battery.opacity(0.5)], startPoint: .top, endPoint: .bottom))
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                        }
-                        RuleMark(y: .value("Average", units.perDistance(consumption.current)))
-                            .foregroundStyle(Color.gray.opacity(0.7))
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                    }
-                    .batteryChartStyle()
-                    .frame(height: 140)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Energy use per ride")
-                    .accessibilityValue("Last \(measured.count) rides, latest \(Int(units.perDistance(measured.last?.whPerKm ?? 0).rounded())) watt hours per \(units.distanceLabel), average \(Int(units.perDistance(consumption.current).rounded()))")
+                    Divider()
+                    statCells([
+                        Tile(title: "Best ride", value: "\(Int(units.perDistance(best).rounded())) Wh/\(units.distanceLabel)", note: "least energy", symbol: "arrow.down.circle.fill", tint: Palette.battery),
+                        Tile(title: "Worst ride", value: "\(Int(units.perDistance(worst).rounded())) Wh/\(units.distanceLabel)", note: "most energy", symbol: "arrow.up.circle.fill", tint: .orange),
+                    ])
+                    .padding(.horizontal, 14)
                 }
             } else {
-                note("Ride at least 0.5 km to see how much energy you use per kilometre.")
+                note("Ride at least 0.5 km to see how much energy you use per kilometre.").padding(14)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardBackground(cornerRadius: 16)
+    }
+
+    /// One bar per ride, oldest first and evenly spaced. Bars under the average are green, bars over it orange.
+    private func efficiencyChart(_ rides: [BatteryHistory.Efficiency], average: Double) -> some View {
+        let values = rides.map { units.perDistance($0.whPerKm) }
+        let top = (values.max() ?? average) * 1.15
+        return VStack(alignment: .leading, spacing: 6) {
+            Chart {
+                ForEach(Array(rides.enumerated()), id: \.element.id) { index, ride in
+                    let value = units.perDistance(ride.whPerKm)
+                    BarMark(x: .value("Ride", Double(index)), y: .value("Wh", value), width: .fixed(14))
+                        .foregroundStyle(value <= average ? Palette.battery : Color.orange)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+                RuleMark(y: .value("Average", average))
+                    .foregroundStyle(Color.primary.opacity(0.55))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            }
+            .chartXScale(domain: -0.6...(Double(rides.count) - 0.4))
+            .chartYScale(domain: 0...top)
+            .chartXAxis(.hidden)
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.gray.opacity(0.35))
+                    AxisValueLabel()
+                }
+            }
+            .chartPlotStyle { $0.clipped() }
+            .frame(height: 140)
+            HStack {
+                Text(rides.first?.date.formatted(.dateTime.day().month(.abbreviated)) ?? "")
+                Spacer()
+                Text("Wh/\(units.distanceLabel) per ride · dashed line is the average, \(Int(average.rounded()))").foregroundStyle(.tertiary).lineLimit(1).minimumScaleFactor(0.8)
+                Spacer()
+                Text(rides.last?.date.formatted(.dateTime.day().month(.abbreviated)) ?? "")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Energy use per ride")
+        .accessibilityValue("Last \(rides.count) rides, latest \(Int(values.last?.rounded() ?? 0)) watt hours per \(units.distanceLabel), average \(Int(average.rounded()))")
     }
 
     private func deltaText(_ consumption: BatteryHistory.Consumption) -> (text: String, better: Bool)? {
@@ -249,8 +485,10 @@ struct BatteryView: View {
     // MARK: Health
 
     private func capacityDetail(_ model: RangeModel) -> String {
-        if model.isCapacityCalibrated { return "Learned from your rides" }
-        return manualCapacityWh > 0 ? "Set by you" : "Rated capacity from the manual, until your rides show more"
+        if model.isCapacityCalibrated {
+            return model.calibrationCycles > 0 ? "learned from your last \(model.calibrationCycles) \(model.calibrationCycles == 1 ? "charge" : "charges")" : "learned from your rides"
+        }
+        return manualCapacityWh > 0 ? "set by you" : "rated, until your rides show more"
     }
 
     private var resistances: [BatteryHistory.Resistance] { history.resistances }
@@ -260,31 +498,88 @@ struct BatteryView: View {
     }
 
     private var healthCard: some View {
-        card {
-            title("Battery health", symbol: "heart.text.square.fill")
-            if let model = store.rangeModel {
-                row("Pack capacity", "\(Int(model.capacityWh.rounded())) Wh", detail: capacityDetail(model))
-                if model.isCapacityCalibrated {
-                    Divider()
-                    let health = BatteryModel.stateOfHealth(capacityWh: model.capacityWh)
-                    row("Capacity vs. new", "\(Int(min(health, 100).rounded())) %", detail: "Rated \(Int(BatteryModel.nominalCapacityWh)) Wh (36 V, 9.5 Ah)")
-                }
-            } else {
-                row("Pack capacity", "Not yet", detail: "Learned after rides that use at least 10% of the battery")
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            capacityHeader.padding(14)
             Divider()
-            if let latest = resistances.last, let trend = resistanceTrend {
-                row("Resistance", "\(latest.milliohm.formatted(.number.precision(.fractionLength(0)))) mΩ", detail: "Lower is healthier")
-                HStack(spacing: 8) {
-                    Circle().fill(trend.tint).frame(width: 8, height: 8)
-                    Text(trend.label).font(.subheadline.weight(.semibold))
-                    Text(trend.detail).font(.footnote).foregroundStyle(.secondary)
+            resistanceSection.padding(14)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardBackground(cornerRadius: 16)
+    }
+
+    /// The learned capacity next to the rating, as a ring that fills with how much of a new pack is left.
+    private var capacityHeader: some View {
+        let model = store.rangeModel
+        let health = model.map { BatteryModel.stateOfHealth(capacityWh: $0.capacityWh) }
+        let known = (model?.isCapacityCalibrated ?? false) && health != nil
+        let status = health.map(Self.healthStatus)
+        return HStack(spacing: 16) {
+            ZStack {
+                Circle().stroke(Color.gray.opacity(0.25), lineWidth: 9)
+                Circle()
+                    .trim(from: 0, to: known ? min(max((health ?? 0) / 100, 0), 1) : 0)
+                    .stroke((status?.tint ?? Palette.battery).gradient, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                VStack(spacing: 0) {
+                    Text(known ? "\(Int(min(health ?? 0, 100).rounded()))%" : "–")
+                        .font(.system(.title3, design: .rounded, weight: .semibold)).monospacedDigit()
+                    Text("of new").font(.caption2).foregroundStyle(.secondary)
                 }
-                resistanceChart
-            } else if let latest = resistances.last {
-                row("Resistance", "\(latest.milliohm.formatted(.number.precision(.fractionLength(0)))) mΩ", detail: "A trend appears after a few more rides")
-            } else {
-                note("Resistance is measured when you accelerate firmly right after standing still. It shows how stiff the battery is: it slowly rises as the pack ages.")
+            }
+            .frame(width: 84, height: 84)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Pack capacity").font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+                Text(model.map { "\(Int($0.capacityWh.rounded())) Wh" } ?? "Not yet")
+                    .font(.system(.title2, design: .rounded, weight: .semibold)).monospacedDigit()
+                if known, let status {
+                    Label(status.label, systemImage: status.symbol).font(.footnote.weight(.semibold)).foregroundStyle(status.tint)
+                }
+                Text(model.map(capacityDetail) ?? "learned after a ride that uses 10% or more")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Pack capacity")
+        .accessibilityValue("\(model.map { "\(Int($0.capacityWh.rounded())) watt hours" } ?? "not known yet"), \(known ? "\(Int(min(health ?? 0, 100).rounded())) percent of new" : "not measured")")
+    }
+
+    private static func healthStatus(_ health: Double) -> (label: String, symbol: String, tint: Color) {
+        switch health {
+        case 90...: ("Like new", "checkmark.seal.fill", Palette.battery)
+        case 80..<90: ("Good", "checkmark.circle.fill", Palette.battery)
+        case 70..<80: ("Ageing", "exclamationmark.circle.fill", .yellow)
+        default: ("Worn", "exclamationmark.triangle.fill", .orange)
+        }
+    }
+
+    private var resistanceSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Label {
+                    Text("Internal resistance").font(.subheadline.weight(.semibold))
+                } icon: {
+                    Image(systemName: "waveform.path").foregroundStyle(resistanceTrend?.tint ?? Palette.battery)
+                }
+                Spacer()
+                if let latest = resistances.last {
+                    Text("\(latest.milliohm.formatted(.number.precision(.fractionLength(0)))) mΩ")
+                        .font(.system(.title3, design: .rounded, weight: .semibold)).monospacedDigit()
+                }
+            }
+            if let trend = resistanceTrend {
+                Text(trend.label)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(trend.tint.opacity(0.16), in: Capsule())
+                    .foregroundStyle(trend.tint)
+                note(trend.detail)
+            }
+            if resistances.count > 1 { resistanceChart }
+            if resistances.isEmpty {
+                note("Measured when you accelerate firmly right after standing still. It shows how stiff the battery is and slowly rises as the pack ages. Lower is healthier.")
+            } else if resistanceTrend == nil {
+                note("A trend appears after a few more rides. Lower is healthier.")
             }
         }
     }
@@ -303,14 +598,11 @@ struct BatteryView: View {
                     .foregroundStyle(Palette.battery)
                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                     .interpolationMethod(.monotone)
-                PointMark(x: .value("Date", point.date), y: .value("mΩ", point.milliohm))
-                    .foregroundStyle(Palette.battery)
-                    .symbolSize(30)
             }
         }
         .chartYScale(domain: domain)
         .batteryChartStyle()
-        .frame(height: 120)
+        .frame(height: 100)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Battery resistance over time")
         .accessibilityValue("\(values.count) measurements, from \(Int(values.first ?? 0)) to \(Int(values.last ?? 0)) milliohm")
@@ -318,26 +610,48 @@ struct BatteryView: View {
 
     // MARK: Usage
 
-    private var usageCard: some View {
-        let cycles = store.rangeModel.map { history.totalEnergyWh / $0.capacityWh }
-        return card {
-            title("Usage", symbol: "chart.bar.fill")
-            LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)], spacing: 14) {
-                fact("Last 30 days", "\(units.distance(fromKm: history.monthDistanceKm).formatted(.number.precision(.fractionLength(0)))) \(units.distanceLabel) · \(history.monthRides) rides")
-                fact("Energy, 30 days", "\((history.monthEnergyWh / 1000).formatted(.number.precision(.fractionLength(2)))) kWh")
-                fact("All rides", "\(history.rideCount) · \(units.distance(fromKm: history.totalDistanceKm).formatted(.number.precision(.fractionLength(0)))) \(units.distanceLabel)")
-                fact("Energy, all time", "\((history.totalEnergyWh / 1000).formatted(.number.precision(.fractionLength(1)))) kWh")
-                fact("Full charge cycles", cycles.map { "≈ \($0.formatted(.number.precision(.fractionLength(0))))" } ?? "Not yet")
-                fact("Energy per 100 \(units.distanceLabel)", Self.energyPer100(distance: units.distance(fromKm: history.totalDistanceKm), energy: history.totalEnergyWh))
-            }
-            note("Charge cycles are the energy used so far divided by the pack capacity.")
-        }
+    private var usageTiles: [Tile] {
+        let equivalents = store.rangeModel.map { history.totalEnergyWh / $0.capacityWh }
+        return [
+            Tile(title: "Last 30 days", value: distanceText(history.monthDistanceKm), note: "\(history.monthRides) \(history.monthRides == 1 ? "ride" : "rides")", symbol: "calendar", tint: Palette.speed),
+            Tile(title: "Energy, 30 days", value: "\((history.monthEnergyWh / 1000).formatted(.number.precision(.fractionLength(2)))) kWh", note: "taken from the battery", symbol: "bolt.fill", tint: Palette.power),
+            Tile(title: "All rides", value: distanceText(history.totalDistanceKm), note: "\(history.rideCount) \(history.rideCount == 1 ? "ride" : "rides")", symbol: "road.lanes", tint: Palette.speed),
+            Tile(title: "Energy, all time", value: "\((history.totalEnergyWh / 1000).formatted(.number.precision(.fractionLength(1)))) kWh", note: "\(Self.energyPer100(distance: units.distance(fromKm: history.totalDistanceKm), energy: history.totalEnergyWh)) per 100 \(units.distanceLabel)", symbol: "bolt.horizontal.fill", tint: Palette.power),
+            Tile(title: "Charges", value: "\(history.cycles.count)", note: "spotted from your rides", symbol: "bolt.badge.checkmark.fill", tint: Palette.battery),
+            Tile(title: "Full charges", value: equivalents.map { "≈ \($0.formatted(.number.precision(.fractionLength(0))))" } ?? "Not yet", note: "energy ÷ capacity", symbol: "battery.100percent.bolt", tint: Palette.battery),
+        ]
     }
 
     private static func energyPer100(distance: Double, energy: Double) -> String {
         guard distance > 0 else { return "–" }
         let kWh = energy / distance * 100 / 1000
         return "\(kWh.formatted(.number.precision(.fractionLength(1)))) kWh"
+    }
+
+    // MARK: Info
+
+    private var infoCard: some View {
+        let fullHours = BatteryModel.hoursToFull(percent: 0, capacityWh: BatteryModel.nominalCapacityWh)
+        return VStack(spacing: 0) {
+            infoRow("Pack", "36 V · 9.5 Ah · \(Int(BatteryModel.nominalCapacityWh)) Wh")
+            Divider()
+            infoRow("Cells", "10 in series, lithium-ion")
+            Divider()
+            infoRow("Charger", "42 V · 2 A · ≈ \(duration(hours: fullHours))")
+            Divider()
+            infoRow("Tracking since", history.cycles.first.map { $0.startedAt.formatted(date: .abbreviated, time: .omitted) } ?? "your first ride")
+        }
+        .padding(.horizontal, 14)
+        .cardBackground(cornerRadius: 16)
+    }
+
+    private func infoRow(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).font(.subheadline).foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(value).font(.subheadline.weight(.medium)).multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 12)
     }
 
     // MARK: Capacity
@@ -364,6 +678,75 @@ struct BatteryView: View {
 
     // MARK: Building blocks
 
+    private struct Tile: Identifiable {
+        let title: String
+        let value: String
+        let note: String
+        let symbol: String
+        let tint: Color
+        var valueTint: Color?
+        var id: String { title }
+    }
+
+    /// Figures in two columns, divided by hairlines, with no boxes of their own, so a section reads as one card.
+    private func statCells(_ tiles: [Tile]) -> some View {
+        let rows = stride(from: 0, to: tiles.count, by: 2).map { Array(tiles[$0..<min($0 + 2, tiles.count)]) }
+        return VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                if index > 0 { Divider() }
+                HStack(alignment: .top, spacing: 0) {
+                    cell(row[0])
+                    if row.count > 1 {
+                        Divider()
+                        cell(row[1])
+                    } else {
+                        Spacer(minLength: 0).frame(maxWidth: .infinity)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func statCard(_ tiles: [Tile]) -> some View {
+        statCells(tiles)
+            .padding(.horizontal, 14)
+            .cardBackground(cornerRadius: 16)
+    }
+
+    private func cell(_ tile: Tile) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Image(systemName: tile.symbol).font(.footnote.weight(.semibold)).foregroundStyle(tile.tint)
+                Text(tile.title).font(.footnote.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Text(tile.value)
+                .font(.system(.title3, design: .rounded, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(tile.valueTint ?? .primary)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+            Text(tile.note).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+        }
+        .padding(.vertical, 12)
+        .padding(.leading, 0)
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tile.title)
+        .accessibilityValue("\(tile.value), \(tile.note)")
+    }
+
+    private func sectionHeader(_ text: String, _ detail: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(text).font(.title3.weight(.semibold))
+            if let detail { Text(detail).font(.footnote).foregroundStyle(.secondary) }
+        }
+        .padding(.top, 14)
+        .padding(.horizontal, 4)
+        .accessibilityAddTraits(.isHeader)
+    }
+
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) { content() }
             .padding(14)
@@ -379,25 +762,6 @@ struct BatteryView: View {
             Image(systemName: symbol).foregroundStyle(Palette.battery)
         }
         .font(.subheadline.weight(.semibold))
-    }
-
-    private func fact(_ title: String, _ value: String, tint: Color? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(tint ?? .primary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func row(_ title: String, _ value: String, detail: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline)
-                Text(detail).font(.footnote).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 12)
-            Text(value).font(.system(.title3, design: .rounded, weight: .semibold)).monospacedDigit()
-        }
     }
 
     private func note(_ text: String) -> some View {

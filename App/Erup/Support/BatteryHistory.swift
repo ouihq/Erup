@@ -1,4 +1,5 @@
 import Foundation
+import ScooterAnalytics
 
 /// Everything the Battery page works out from the ride history, in one pass. It is computed when the history changes,
 /// not every time the live battery reading does (several times a second).
@@ -23,10 +24,33 @@ struct BatteryHistory: Equatable {
     struct Entry: Sendable {
         let id: UUID
         let startedAt: Date
+        let endedAt: Date
         let distanceKm: Double
         let energyWh: Double
-        let batteryUsed: Int
+        let batteryStart: Int
+        let batteryEnd: Int
+        let maxSpeedKmh: Double
+        let regenWh: Double?
         let internalResistanceOhm: Double?
+
+        var batteryUsed: Int { batteryStart - batteryEnd }
+
+        init(
+            id: UUID, startedAt: Date, endedAt: Date? = nil, distanceKm: Double, energyWh: Double,
+            batteryStart: Int = 0, batteryEnd: Int = 0, maxSpeedKmh: Double = 0, regenWh: Double? = nil,
+            internalResistanceOhm: Double?
+        ) {
+            self.id = id
+            self.startedAt = startedAt
+            self.endedAt = endedAt ?? startedAt
+            self.distanceKm = distanceKm
+            self.energyWh = energyWh
+            self.batteryStart = batteryStart
+            self.batteryEnd = batteryEnd
+            self.maxSpeedKmh = maxSpeedKmh
+            self.regenWh = regenWh
+            self.internalResistanceOhm = internalResistanceOhm
+        }
     }
 
     static let empty = BatteryHistory(entries: [])
@@ -45,11 +69,19 @@ struct BatteryHistory: Equatable {
     var resistances: [Resistance] = []
     var packResistanceOhm = typicalResistanceOhm
     var lastRide: Entry?
+    /// Charge to charge, oldest first.
+    var cycles: [ChargeCycles.Cycle] = []
 
     /// `entries` must be ordered newest first.
     init(entries: [Entry], now: Date = .now) {
         rideCount = entries.count
         lastRide = entries.first
+        cycles = ChargeCycles.cycles(from: entries.map {
+            ChargeCycles.Ride(
+                startedAt: $0.startedAt, endedAt: $0.endedAt, distanceKm: $0.distanceKm, energyWh: $0.energyWh,
+                batteryStart: $0.batteryStart, batteryEnd: $0.batteryEnd, maxSpeedKmh: $0.maxSpeedKmh, regenWh: $0.regenWh
+            )
+        })
         let monthAgo = now.addingTimeInterval(-30 * 86_400)
         for entry in entries {
             totalDistanceKm += entry.distanceKm
@@ -101,6 +133,6 @@ struct BatteryHistory: Equatable {
     static func == (lhs: BatteryHistory, rhs: BatteryHistory) -> Bool {
         lhs.rideCount == rhs.rideCount && lhs.totalDistanceKm == rhs.totalDistanceKm && lhs.totalEnergyWh == rhs.totalEnergyWh
             && lhs.lastRide?.id == rhs.lastRide?.id && lhs.consumption == rhs.consumption && lhs.efficiency == rhs.efficiency
-            && lhs.resistances == rhs.resistances
+            && lhs.resistances == rhs.resistances && lhs.cycles == rhs.cycles
     }
 }
