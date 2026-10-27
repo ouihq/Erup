@@ -169,7 +169,7 @@ final class DataAndNoticeTests: XCTestCase {
     func testBatteryHistoryIsWorkedOutInOnePass() {
         let now = Date(timeIntervalSinceReferenceDate: 900_000_000)
         func entry(_ daysAgo: Double, km: Double, wh: Double, used: Int = 5, resistance: Double? = nil) -> BatteryHistory.Entry {
-            .init(id: UUID(), startedAt: now.addingTimeInterval(-daysAgo * 86_400), distanceKm: km, energyWh: wh, batteryUsed: used, internalResistanceOhm: resistance)
+            .init(id: UUID(), startedAt: now.addingTimeInterval(-daysAgo * 86_400), distanceKm: km, energyWh: wh, batteryStart: 60, batteryEnd: 60 - used, internalResistanceOhm: resistance)
         }
         let entries = [entry(1, km: 4, wh: 80, resistance: 0.2), entry(10, km: 6, wh: 150, resistance: 0.4), entry(60, km: 10, wh: 200)]
         let history = BatteryHistory(entries: entries, now: now)

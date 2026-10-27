@@ -25,6 +25,7 @@
 		27FB3B9440A9B31B562070C6 /* AlertSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F95F1E60C21725003A1FAF7 /* AlertSettingsView.swift */; };
 		286FBCDBB1EBD8B3EC2DD037 /* AppReset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7033D0A2DBD67AC57EE61ABA /* AppReset.swift */; };
 		2CE0858044376386926AD38F /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FCEE051387EBCF524ACC4E7 /* DashboardView.swift */; };
+		2CF50E13D6007AAD38F9D743 /* AlertRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C3EBE9B08484BC0AE29026D /* AlertRule.swift */; };
 		3207578631C3F2FCCD2C11A1 /* ScooterProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 6AE5E637B33A7B21B426C169 /* ScooterProtocol */; };
 		34C6BEEC5A3690239BCDF9CE /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2AB980AC86FCFAA142BCAE2 /* AppGroup.swift */; };
 		34EAC1FB8C41753E83D3BE22 /* Ride.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64433E5C0581D927406DBC43 /* Ride.swift */; };
@@ -174,6 +175,7 @@
 		4980EBB07F539B79D0B3702F /* NotificationCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationCenterView.swift; sourceTree = "<group>"; };
 		4A08322EDDF0C8DA55C82753 /* ScooterConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterConnection.swift; sourceTree = "<group>"; };
 		4AF72AE3283FEBF7F9485690 /* ScooterStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScooterStore.swift; sourceTree = "<group>"; };
+		4C3EBE9B08484BC0AE29026D /* AlertRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertRule.swift; sourceTree = "<group>"; };
 		4D5FF8CDF3D27DDA59556310 /* ConnectionBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionBadge.swift; sourceTree = "<group>"; };
 		5669AD8337EF321F5ED0274E /* DataSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSettingsView.swift; sourceTree = "<group>"; };
 		5AF35DE55CF682E7BC867D2A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -365,6 +367,14 @@
 			path = Services;
 			sourceTree = "<group>";
 		};
+		37435F0A631B49D1D5DEB8D3 /* Alerts */ = {
+			isa = PBXGroup;
+			children = (
+				4C3EBE9B08484BC0AE29026D /* AlertRule.swift */,
+			);
+			path = Alerts;
+			sourceTree = "<group>";
+		};
 		61809ACD611776A46552B978 /* Connection */ = {
 			isa = PBXGroup;
 			children = (
@@ -394,6 +404,7 @@
 				64758592FE3C5C4683436F18 /* Erup.entitlements */,
 				27C4B81E0A5D444D5B8F2C13 /* ErupApp.swift */,
 				682105809C1EAB5773B5AE8C /* Info.plist */,
+				37435F0A631B49D1D5DEB8D3 /* Alerts */,
 				A77D60570C42C52E51358882 /* Backup */,
 				61809ACD611776A46552B978 /* Connection */,
 				7572D091272FB4087CA46217 /* Intents */,
@@ -644,6 +655,7 @@
 			files = (
 				7B47E4D8916E56268E536782 /* ActivityUpdatePolicy.swift in Sources */,
 				56597C8F26EB298D394F77E1 /* AlertEngine.swift in Sources */,
+				2CF50E13D6007AAD38F9D743 /* AlertRule.swift in Sources */,
 				AFA61B11A8B1B395E7E0229C /* AlertSettings.swift in Sources */,
 				27FB3B9440A9B31B562070C6 /* AlertSettingsView.swift in Sources */,
 				1EE4DBF1D603F607EE117221 /* AppGroup.swift in Sources */,

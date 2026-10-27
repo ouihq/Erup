@@ -620,3 +620,112 @@ final class BatteryModelTests: XCTestCase {
     }
 }
 
+
+final class ChargeCycleTests: XCTestCase {
+    private let origin = Date(timeIntervalSinceReferenceDate: 800_000_000)
+
+    private func ride(_ day: Double, from: Int, to: Int, km: Double = 5, wh: Double = 60, regen: Double? = 5) -> ChargeCycles.Ride {
+        let start = origin.addingTimeInterval(day * 86_400)
+        return ChargeCycles.Ride(
+            startedAt: start, endedAt: start.addingTimeInterval(900), distanceKm: km, energyWh: wh,
+            batteryStart: from, batteryEnd: to, maxSpeedKmh: 24, regenWh: regen
+        )
+    }
+
+    func testRidesThatKeepDrainingTheBatteryAreOneCycle() {
+        let cycles = ChargeCycles.cycles(from: [ride(0, from: 98, to: 90), ride(1, from: 90, to: 80), ride(2, from: 79, to: 70)])
+        XCTAssertEqual(cycles.count, 1)
+        XCTAssertEqual(cycles[0].rideCount, 3)
+        XCTAssertEqual(cycles[0].distanceKm, 15, accuracy: 0.0001)
+        XCTAssertEqual(cycles[0].startPercent, 98)
+        XCTAssertEqual(cycles[0].endPercent, 70)
+        XCTAssertEqual(cycles[0].usedPercent, 28)
+    }
+
+    func testARiseOfEightPointsOrMoreBetweenRidesStartsANewCycle() {
+        let rides = [ride(0, from: 98, to: 40), ride(1, from: 44, to: 30), ride(3, from: 100, to: 60)]
+        let cycles = ChargeCycles.cycles(from: rides)
+        XCTAssertEqual(cycles.map(\.rideCount), [2, 1])
+        XCTAssertEqual(cycles.map(\.number), [1, 2])
+        XCTAssertEqual(cycles[0].endPercent, 30)
+        XCTAssertEqual(cycles[1].startPercent, 100)
+        XCTAssertEqual(ChargeCycles.cycles(from: [ride(0, from: 98, to: 40), ride(1, from: 47, to: 30)]).count, 1, "seven points is noise, not a charge")
+        XCTAssertEqual(ChargeCycles.cycles(from: [ride(0, from: 98, to: 40), ride(1, from: 48, to: 30)]).count, 2, "eight points is a charge")
+    }
+
+    func testRidesAreOrderedByTimeWhateverTheInput() {
+        let cycles = ChargeCycles.cycles(from: [ride(3, from: 100, to: 60), ride(0, from: 98, to: 40)])
+        XCTAssertEqual(cycles.map(\.startPercent), [98, 100])
+    }
+
+    func testTotalsRangeAndRecoveredEnergy() {
+        let cycles = ChargeCycles.cycles(from: [ride(0, from: 100, to: 70, km: 10, wh: 100, regen: 8), ride(1, from: 70, to: 50, km: 8, wh: 80, regen: 6)])
+        let cycle = cycles[0]
+        XCTAssertEqual(cycle.energyWh, 180, accuracy: 0.0001)
+        XCTAssertEqual(cycle.whPerKm ?? 0, 10, accuracy: 0.0001)
+        XCTAssertEqual(cycle.ridingTime, 1800, accuracy: 0.0001)
+        XCTAssertEqual(cycle.regenWh ?? 0, 14, accuracy: 0.0001)
+        XCTAssertEqual(cycle.projectedRangeKm ?? 0, 36, accuracy: 0.0001, "18 km on 50 % is 36 km on a full battery")
+        XCTAssertNil(ChargeCycles.cycles(from: [ride(0, from: 80, to: 70)])[0].projectedRangeKm, "ten points is too little to extrapolate from")
+    }
+
+    func testRecoveredEnergyIsUnknownIfAnyRideDidNotMeasureIt() {
+        XCTAssertNil(ChargeCycles.cycles(from: [ride(0, from: 90, to: 80, regen: 4), ride(1, from: 80, to: 70, regen: nil)])[0].regenWh)
+    }
+
+    func testNoRidesMeansNoCycles() {
+        XCTAssertTrue(ChargeCycles.cycles(from: []).isEmpty)
+    }
+
+    func testAHigherLevelNowThanAtTheEndOfTheLastRideMeansItWasCharged() {
+        XCTAssertTrue(ChargeCycles.isChargedSinceLastRide(lastRideEnd: 30, currentPercent: 95))
+        XCTAssertFalse(ChargeCycles.isChargedSinceLastRide(lastRideEnd: 30, currentPercent: 33))
+    }
+}
+
+final class ChargeBasedCapacityTests: XCTestCase {
+    private func ride(_ from: Int, _ to: Int, wh: Double, km: Double = 5) -> RideEnergyRecord {
+        RideEnergyRecord(distanceKm: km, energyWh: wh, batteryStart: from, batteryEnd: to)
+    }
+
+    func testCapacityIsTheEnergyOfWholeChargesOverTheBatteryTheyUsed() throws {
+        // Two charges, newest first. Each used 100 → 40, 60 points, for 200 Wh: 333 Wh for a full pack.
+        let rides = [ride(70, 40, wh: 100), ride(100, 70, wh: 100), ride(68, 38, wh: 100), ride(98, 68, wh: 100)]
+        let model = try XCTUnwrap(RangeEstimator.model(rides: rides, manualCapacityWh: nil, nominalCapacityWh: 342))
+        XCTAssertEqual(model.capacityWh, 400.0 / 1.20, accuracy: 1e-9)
+        XCTAssertEqual(model.calibrationCycles, 2)
+        XCTAssertTrue(model.isCapacityCalibrated)
+    }
+
+    func testSmallDrainsAreNotTrustedForTheCapacity() throws {
+        // Charges that each used only 6 points: too coarse for either method, so the rating is kept.
+        let rides = [ride(95, 89, wh: 20), ride(96, 90, wh: 20), ride(97, 91, wh: 20), ride(95, 89, wh: 20)]
+        let model = try XCTUnwrap(RangeEstimator.model(rides: rides, manualCapacityWh: nil, nominalCapacityWh: 342))
+        XCTAssertEqual(model.capacityWh, 342)
+        XCTAssertEqual(model.calibrationCycles, 0)
+    }
+
+    func testRidesOfOneChargeAreJoinedBeforeTheyAreJudged() throws {
+        // Three 10-point rides in a row are one 30-point charge, which is enough; alone none of them is.
+        let rides = [ride(70, 60, wh: 35), ride(80, 70, wh: 35), ride(90, 80, wh: 35)]
+        let found = try XCTUnwrap(RangeEstimator.capacityFromCharges(rides))
+        XCTAssertEqual(found.cycles, 1)
+        XCTAssertEqual(found.capacityWh, 105.0 / 0.30, accuracy: 1e-9)
+    }
+
+    func testOnlyTheNewestChargesCount() throws {
+        var rides: [RideEnergyRecord] = []
+        for _ in 0..<6 { rides.append(ride(100, 60, wh: 120)) }   // 300 Wh packs
+        rides.append(ride(100, 60, wh: 240))                      // an old, oddly high one: 600 Wh
+        let found = try XCTUnwrap(RangeEstimator.capacityFromCharges(rides))
+        XCTAssertEqual(found.cycles, RangeEstimator.calibrationCycleLimit)
+        XCTAssertEqual(found.capacityWh, 300, accuracy: 1e-9)
+    }
+
+    func testAManualCapacityStillWins() throws {
+        let rides = [ride(100, 40, wh: 200), ride(100, 40, wh: 200)]
+        let model = try XCTUnwrap(RangeEstimator.model(rides: rides, manualCapacityWh: 400, nominalCapacityWh: 342))
+        XCTAssertEqual(model.capacityWh, 400)
+        XCTAssertEqual(model.calibrationCycles, 0)
+    }
+}
