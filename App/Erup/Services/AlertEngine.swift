@@ -1,11 +1,10 @@
 import Foundation
 
+/// Checks the rules against each reading. Every rule fires once when its condition is met and again only after the
+/// reading has come back by its margin, so a value hovering at a threshold gives one alert.
 struct AlertEngine {
     enum Alert: Equatable {
-        case batteryLow(Int)
-        case batteryCritical(Int)
-        case controllerHot(Int)
-        case motorHot(Int)
+        case rule(AlertRule, value: Double)
         case chargeComplete
     }
 
@@ -19,76 +18,64 @@ struct AlertEngine {
         var date: Date
     }
 
-    /// Where each alert fires. Nil switches that alert off. The defaults are conservative guesses, not manufacturer limits.
-    struct Limits: Equatable {
-        var batteryLow: Int?
-        var batteryCritical: Int?
-        var controllerHot: Int?
-        var motorHot: Int?
-        var chargeComplete: Bool
+    static let chargingCurrent = -0.2
+    static let chargingDuration: TimeInterval = 30
+    static let fullBattery = 100
 
-        static let standard = Limits(batteryLow: 20, batteryCritical: 10, controllerHot: 70, motorHot: 90, chargeComplete: true)
-        /// How far a reading must move back before the same alert can fire again.
-        static let batteryRearm = 5
-        static let temperatureRearm = 10
-        static let chargingCurrent = -0.2
-        static let chargingDuration: TimeInterval = 30
-        static let fullBattery = 100
-
-        /// What the rider chose in Settings.
-        static var current: Limits { AlertSettings.limits }
-    }
-
-    private var lowArmed = true
-    private var criticalArmed = true
-    private var controllerArmed = true
-    private var motorArmed = true
+    private var armed: [UUID: Bool] = [:]
     private var chargeArmed = true
     private var chargingSince: Date?
 
-    mutating func evaluate(_ reading: Reading, limits: Limits = .current) -> [Alert] {
+    mutating func evaluate(_ reading: Reading, rules: [AlertRule], notifiesChargeComplete: Bool = true) -> [Alert] {
         guard reading.isConnected else {
             chargingSince = nil
             return []
         }
         var alerts: [Alert] = []
 
-        if let critical = limits.batteryCritical, reading.batteryPercent <= critical, criticalArmed {
-            criticalArmed = false
-            lowArmed = false
-            alerts.append(.batteryCritical(reading.batteryPercent))
-        } else if let low = limits.batteryLow, reading.batteryPercent <= low, lowArmed {
-            lowArmed = false
-            alerts.append(.batteryLow(reading.batteryPercent))
+        var triggered: [(rule: AlertRule, value: Double)] = []
+        for rule in rules {
+            guard rule.isEnabled else {
+                armed[rule.id] = true
+                continue
+            }
+            let value = rule.metric.value(in: reading)
+            if rule.isMet(by: value) {
+                if armed[rule.id] ?? true { triggered.append((rule, value)) }
+            } else if rule.hasReset(at: value) {
+                armed[rule.id] = true
+            }
         }
-        if reading.batteryPercent >= (limits.batteryCritical ?? 0) + Limits.batteryRearm { criticalArmed = true }
-        if reading.batteryPercent >= (limits.batteryLow ?? 0) + Limits.batteryRearm { lowArmed = true }
+        // Rules on the same reading that fire together, such as low and critical battery, give one alert: the most serious.
+        for rule in triggered { armed[rule.rule.id] = false }
+        var groups: [String: (rule: AlertRule, value: Double)] = [:]
+        for item in triggered {
+            let key = "\(item.rule.metric.rawValue).\(item.rule.direction.rawValue)"
+            if let best = groups[key], !Self.isMoreSpecific(item.rule, than: best.rule) { continue }
+            groups[key] = item
+        }
+        for rule in rules {
+            if let item = groups.values.first(where: { $0.rule.id == rule.id }) { alerts.append(.rule(item.rule, value: item.value)) }
+        }
 
-        if let hot = limits.controllerHot, reading.controllerTemperature >= hot, controllerArmed {
-            controllerArmed = false
-            alerts.append(.controllerHot(reading.controllerTemperature))
-        } else if reading.controllerTemperature < (limits.controllerHot ?? 0) - Limits.temperatureRearm {
-            controllerArmed = true
-        }
-        if let hot = limits.motorHot, reading.motorTemperature >= hot, motorArmed {
-            motorArmed = false
-            alerts.append(.motorHot(reading.motorTemperature))
-        } else if reading.motorTemperature < (limits.motorHot ?? 0) - Limits.temperatureRearm {
-            motorArmed = true
-        }
-
-        let isCharging = reading.current <= Limits.chargingCurrent && reading.speedKmh < 0.5
+        let isCharging = reading.current <= Self.chargingCurrent && reading.speedKmh < 0.5
         if isCharging {
             chargingSince = chargingSince ?? reading.date
         } else if reading.current > 0 {
             chargingSince = nil
         }
-        if limits.chargeComplete, let chargingSince, chargeArmed, reading.batteryPercent >= Limits.fullBattery,
-           reading.date.timeIntervalSince(chargingSince) >= Limits.chargingDuration {
+        if notifiesChargeComplete, let chargingSince, chargeArmed, reading.batteryPercent >= Self.fullBattery,
+           reading.date.timeIntervalSince(chargingSince) >= Self.chargingDuration {
             chargeArmed = false
             alerts.append(.chargeComplete)
         }
         if reading.batteryPercent < 95 { chargeArmed = true }
         return alerts
+    }
+
+    /// The more serious rule wins; between two equally serious ones, the one with the further threshold.
+    private static func isMoreSpecific(_ rule: AlertRule, than other: AlertRule) -> Bool {
+        if rule.severity != other.severity { return rule.severity > other.severity }
+        return rule.direction == .above ? rule.threshold > other.threshold : rule.threshold < other.threshold
     }
 }

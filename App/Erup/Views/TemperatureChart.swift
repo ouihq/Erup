@@ -48,11 +48,8 @@ struct TemperatureChart<X: Plottable & Comparable>: View {
                             .interpolationMethod(.monotone)
                     }
                 }
-                if let hot = AlertEngine.Limits.current.controllerHot, (controller.max() ?? 0) >= Double(hot) - 15 {
-                    rule("Controller limit", Double(hot), Palette.controllerTemperature)
-                }
-                if let hot = AlertEngine.Limits.current.motorHot, (motor.max() ?? 0) >= Double(hot) - 15 {
-                    rule("Motor limit", Double(hot), Palette.motorTemperature)
+                ForEach(limitRules(controller: controller, motor: motor)) { limit in
+                    rule(limit.name, limit.threshold, limit.severity.color)
                 }
                 if let selection {
                     RuleMark(x: .value("Selected", selection))
@@ -89,6 +86,16 @@ struct TemperatureChart<X: Plottable & Comparable>: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Temperature over time")
         .accessibilityValue(summary(controller: controller.last, motor: motor.last))
+    }
+
+    /// Temperature rules the readings are getting near, drawn in their colour.
+    private func limitRules(controller: [Double], motor: [Double]) -> [AlertRule] {
+        let center = AlertRuleCenter.shared
+        let near: (AlertMetric, [Double]) -> [AlertRule] = { metric, values in
+            guard let peak = values.max() else { return [] }
+            return center.limits(for: metric).filter { peak >= $0.threshold - 15 }
+        }
+        return near(.controllerTemperature, controller) + near(.motorTemperature, motor)
     }
 
     private func rule(_ title: String, _ value: Double, _ tint: Color) -> some ChartContent {

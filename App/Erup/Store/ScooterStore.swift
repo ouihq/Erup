@@ -132,6 +132,8 @@ final class ScooterStore {
     private(set) var frameLog: [FrameLogEntry] = []
     private(set) var pendingChanges: [ControlChange.Kind: ControlChange] = [:]
     private(set) var alertMessage: String?
+    /// Colours the banner. Nil for a problem, which is not about the scooter's level of anything.
+    private(set) var alertSeverity: AlertSeverity?
     /// Everything that was reported, newest last. The banner is only a short-lived view of the latest entry.
     private(set) var notices: [Notice] = []
     private(set) var unreadNoticeCount = 0
@@ -358,6 +360,7 @@ final class ScooterStore {
     func dismissAlert() {
         alertTask?.cancel()
         alertMessage = nil
+        alertSeverity = nil
     }
 
     private func request(_ change: ControlChange) {
@@ -766,6 +769,7 @@ final class ScooterStore {
         addNotice(message, kind: .problem)
         alertTask?.cancel()
         alertMessage = message
+        alertSeverity = nil
         alertTask = Task {
             do { try await Task.sleep(for: Self.alertDuration) } catch { return }
             self.alertMessage = nil
@@ -773,6 +777,19 @@ final class ScooterStore {
     }
 
     // MARK: Notification center
+
+    /// A rule fired: shows the banner in the severity's colour and keeps the entry in the notification center.
+    func presentAlert(_ message: String, severity: AlertSeverity) {
+        addNotice(message, kind: .alert)
+        alertTask?.cancel()
+        alertMessage = message
+        alertSeverity = severity
+        alertTask = Task {
+            do { try await Task.sleep(for: Self.alertDuration * (severity == .critical ? 2 : 1)) } catch { return }
+            self.alertMessage = nil
+            self.alertSeverity = nil
+        }
+    }
 
     /// Adds an entry without showing the banner, for alerts that already reached the person as a system notification.
     func logAlert(_ message: String) {

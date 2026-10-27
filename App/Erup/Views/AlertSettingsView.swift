@@ -1,27 +1,31 @@
 import SwiftUI
 
-/// Where the scooter's alerts fire. "Off" silences one alert; nothing here changes what the scooter itself does.
+/// The alerts: each is a rule that watches one reading and has a colour. The ones that come with the app can be changed
+/// and switched off; others can be added, such as a warning for the motor getting warm.
 struct AlertSettingsView: View {
     @AppStorage(AlertSettings.chargeCompleteKey) private var chargeComplete = true
+    @State private var center = AlertRuleCenter.shared
+    @State private var editing: AlertRule?
+    @State private var confirmsReset = false
 
     var body: some View {
         Form {
             Section {
-                picker(AlertSettings.batteryLow, symbol: "battery.25percent", tint: .orange)
-                picker(AlertSettings.batteryCritical, symbol: "battery.0percent", tint: .red)
+                ForEach(center.rules) { rule in
+                    row(rule)
+                }
+                .onDelete { offsets in
+                    for index in offsets { center.delete(center.rules[index]) }
+                }
+                Button {
+                    editing = AlertRule(name: "", metric: .motorTemperature, direction: .above, threshold: AlertMetric.motorTemperature.defaultThreshold)
+                } label: {
+                    Label("Add an alert…", systemImage: "plus.circle.fill")
+                }
             } header: {
-                Text("Battery")
+                Text("Alerts")
             } footer: {
-                Text("An alert can fire again once the level has climbed 5 points above its limit.")
-            }
-
-            Section {
-                picker(AlertSettings.controllerHot, symbol: "cpu.fill", tint: .red)
-                picker(AlertSettings.motorHot, symbol: "gearshape.2.fill", tint: .red)
-            } header: {
-                Text("Temperature")
-            } footer: {
-                Text("Limits are conservative guesses, not manufacturer values. A temperature alert re-arms after a drop of 10 °C. The limits are also drawn on the temperature charts.")
+                Text("The colour marks the battery indicator and the banner in the app: yellow is a warning, red is critical. An alert fires once and again only after the reading has moved back. Notifications are optional per alert.")
             }
 
             Section {
@@ -31,40 +35,162 @@ struct AlertSettingsView: View {
             } footer: {
                 Text("Tells you when the battery is full and the scooter is still on the charger.")
             }
+
+            Section {
+                Button("Restore the standard alerts…", role: .destructive) { confirmsReset = true }
+            } footer: {
+                Text("Puts battery low at 20% (yellow) and critical at 10% (red), and the two temperature alerts, back as they came. Alerts you added are removed.")
+            }
         }
         .navigationTitle("Alerts")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $editing) { rule in
+            AlertRuleEditor(rule: rule, isNew: !center.rules.contains { $0.id == rule.id })
+        }
+        .confirmationDialog("Restore the standard alerts?", isPresented: $confirmsReset, titleVisibility: .visible) {
+            Button("Restore", role: .destructive) { center.resetToDefaults() }
+        }
     }
 
-    private func picker(_ option: AlertSettings.Option, symbol: String, tint: Color) -> some View {
-        AlertLimitPicker(option: option, symbol: symbol, tint: tint)
+    private func row(_ rule: AlertRule) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                editing = rule
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: rule.metric.symbol)
+                        .foregroundStyle(rule.severity.color)
+                        .frame(width: 28, height: 28)
+                        .background(rule.severity.color.opacity(0.16), in: RoundedRectangle(cornerRadius: 7))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(rule.name.isEmpty ? rule.metric.title : rule.name).foregroundStyle(.primary)
+                        Text(rule.summary + (rule.notifies ? "" : " · no notification"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Toggle("", isOn: Binding(
+                get: { rule.isEnabled },
+                set: { var changed = rule; changed.isEnabled = $0; center.update(changed) }
+            ))
+            .labelsHidden()
+        }
+        .deleteDisabled(rule.isBuiltIn)
     }
 }
 
-private struct AlertLimitPicker: View {
-    let option: AlertSettings.Option
-    let symbol: String
-    let tint: Color
-    @State private var value: Int
+/// One alert: what it watches, when it fires, its colour, and whether it also notifies.
+struct AlertRuleEditor: View {
+    @State var rule: AlertRule
+    let isNew: Bool
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("useMiles") private var useMiles = false
 
-    init(option: AlertSettings.Option, symbol: String, tint: Color) {
-        self.option = option
-        self.symbol = symbol
-        self.tint = tint
-        _value = State(initialValue: AlertSettings.value(option))
-    }
+    private var units: Units { Units(useMiles: useMiles) }
+    private var center: AlertRuleCenter { .shared }
 
     var body: some View {
-        Picker(selection: $value) {
-            ForEach(option.choices, id: \.self) { Text(AlertSettings.title(for: $0, in: option)).tag($0) }
-        } label: {
-            SettingsLabel(title: option.title, symbol: symbol, tint: tint)
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Name", text: $rule.name, prompt: Text(rule.metric.title))
+                    if !rule.isBuiltIn {
+                        Picker("Watch", selection: $rule.metric) {
+                            ForEach(AlertMetric.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                        }
+                        .onChange(of: rule.metric) { _, metric in rule.threshold = metric.defaultThreshold }
+                    }
+                } header: {
+                    Text("Alert")
+                }
+
+                Section {
+                    if !rule.isBuiltIn {
+                        Picker("When it is", selection: $rule.direction) {
+                            ForEach(AlertDirection.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    Stepper(value: threshold, in: displayRange, step: rule.metric.step) {
+                        LabeledContent(rule.direction == .above ? "At or above" : "At or below", value: thresholdText)
+                    }
+                } header: {
+                    Text("Condition")
+                } footer: {
+                    Text(rule.summary + ".")
+                }
+
+                Section {
+                    Picker("Colour", selection: $rule.severity) {
+                        ForEach(AlertSeverity.allCases) { severity in
+                            Label {
+                                Text(severity.title)
+                            } icon: {
+                                Image(systemName: severity.symbol).foregroundStyle(severity.color)
+                            }
+                            .tag(severity)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                    Toggle("Send a notification", isOn: $rule.notifies)
+                } header: {
+                    Text("Colour and notification")
+                } footer: {
+                    Text("The colour is used for the battery indicator and the banner in the app. Turn the notification off to see the alert in the app only.")
+                }
+
+                if !isNew && !rule.isBuiltIn {
+                    Section {
+                        Button("Delete this alert", role: .destructive) {
+                            center.delete(rule)
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle(isNew ? "New alert" : "Alert")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        if rule.name.trimmingCharacters(in: .whitespaces).isEmpty { rule.name = rule.metric.title }
+                        center.update(rule)
+                        dismiss()
+                    }
+                }
+            }
         }
-        .onChange(of: value) { _, new in UserDefaults.standard.set(new, forKey: option.key) }
+        .presentationDetents([.large])
+    }
+
+    /// Speed is kept in km/h and shown in the rider's unit; everything else is shown as it is stored.
+    private var displayRange: ClosedRange<Double> {
+        rule.metric == .speed ? units.speed(fromKmh: rule.metric.range.lowerBound)...units.speed(fromKmh: rule.metric.range.upperBound) : rule.metric.range
+    }
+
+    private var threshold: Binding<Double> {
+        Binding(
+            get: { rule.metric == .speed ? units.speed(fromKmh: rule.threshold).rounded() : rule.threshold },
+            set: { rule.threshold = rule.metric == .speed ? ($0 / units.speed(fromKmh: 1)) : $0 }
+        )
+    }
+
+    private var thresholdText: String {
+        let value = threshold.wrappedValue.formatted(.number.precision(.fractionLength(0)))
+        switch rule.metric {
+        case .battery: return "\(value)%"
+        case .speed: return "\(value) \(units.speedLabel)"
+        default: return "\(value) \(rule.metric.unit)"
+        }
     }
 }
 
-#Preview("Alert settings, dark") {
+#Preview("Alerts, dark") {
     NavigationStack { AlertSettingsView() }
         .preferredColorScheme(.dark)
 }

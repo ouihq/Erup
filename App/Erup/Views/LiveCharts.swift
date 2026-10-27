@@ -418,8 +418,9 @@ struct StatusStrip: View {
             .accessibilityLabel(locked ? "Locked" : "Unlocked")
     }
 
+    /// Green until a battery rule is met: yellow at the warning level, red at the critical one, as set in Alerts.
     private func batteryTint(_ percent: Int) -> Color {
-        percent <= 15 ? .red : percent <= 30 ? .orange : .green
+        AlertRuleCenter.shared.severity(for: .battery, value: Double(percent))?.color ?? .green
     }
 
     private func batterySymbol(_ percent: Int) -> String {

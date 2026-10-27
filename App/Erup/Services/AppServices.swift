@@ -8,6 +8,7 @@ final class AppServices {
     private let liveActivity = LiveActivityController()
     private let notifications = NotificationService()
     private var alerts = AlertEngine()
+    private let alertRules = AlertRuleCenter.shared
     private let rides: RideRecorder
     let backups: BackupScheduler
     private let keepRunning = BackgroundKeepAlive()
@@ -34,6 +35,7 @@ final class AppServices {
             Task { @MainActor in
                 self?.refreshKeepRunning()
                 self?.rides.applySettings()
+                self?.alertRules.reloadIfChanged()
             }
         }
         store.onRideContextInvalidated = { [weak rides] in rides?.refreshRideContext() }
@@ -81,10 +83,17 @@ final class AppServices {
             isConnected: snapshot.isConnected,
             date: snapshot.updatedAt
         )
-        for alert in alerts.evaluate(reading) {
+        let fired = alerts.evaluate(reading, rules: alertRules.rules, notifiesChargeComplete: AlertSettings.notifiesChargeComplete())
+        for alert in fired {
             let (title, body) = NotificationService.text(for: alert)
-            store.logAlert("\(title). \(body)")
-            Task { await notifications.post(alert) }
+            switch alert {
+            case .rule(let rule, _):
+                store.presentAlert("\(title). \(body)", severity: rule.severity)
+                if rule.notifies { Task { await notifications.post(alert) } }
+            case .chargeComplete:
+                store.logAlert("\(title). \(body)")
+                Task { await notifications.post(alert) }
+            }
         }
     }
 

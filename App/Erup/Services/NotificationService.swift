@@ -24,6 +24,7 @@ final class NotificationService {
         content.body = body
         content.sound = .default
         content.interruptionLevel = .active
+        content.threadIdentifier = "alerts"
         let request = UNNotificationRequest(identifier: "alert.\(title)", content: content, trigger: nil)
         do {
             try await center.add(request)
@@ -34,11 +35,20 @@ final class NotificationService {
 
     static func text(for alert: AlertEngine.Alert) -> (String, String) {
         switch alert {
-        case .batteryLow(let percent): ("Scooter battery low", "\(percent)% left.")
-        case .batteryCritical(let percent): ("Scooter battery critical", "\(percent)% left. Find a charger.")
-        case .controllerHot(let degrees): ("Controller is hot", "\(degrees) °C. Ease off or stop to let it cool.")
-        case .motorHot(let degrees): ("Motor is hot", "\(degrees) °C. Ease off or stop to let it cool.")
         case .chargeComplete: ("Charging complete", "The scooter battery is full.")
+        case .rule(let rule, let value): (rule.name, body(for: rule, value: value))
+        }
+    }
+
+    private static func body(for rule: AlertRule, value: Double) -> String {
+        let shown = value.formatted(.number.precision(.fractionLength(rule.metric == .current ? 1 : 0)))
+        switch rule.metric {
+        case .battery:
+            return rule.severity == .critical ? "\(shown)% left. Find a charger." : "\(shown)% left."
+        case .motorTemperature, .controllerTemperature:
+            return "\(shown) °C. Ease off or stop to let it cool."
+        case .speed: return "\(shown) km/h."
+        case .current: return "\(shown) A."
         }
     }
 }
