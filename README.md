@@ -6,7 +6,7 @@
 ![iOS 18+](https://img.shields.io/badge/iOS-18%2B-000000?logo=apple&logoColor=white)
 ![SwiftUI](https://img.shields.io/badge/SwiftUI-0A84FF)
 ![No dependencies](https://img.shields.io/badge/dependencies-none-8E8E93)
-![Version](https://img.shields.io/badge/version-1.6.0-0A84FF)
+![Version](https://img.shields.io/badge/version-1.7.0-0A84FF)
 
 <a href="https://altstore.io/source/raw.githubusercontent.com/ouihq/Erup/main/source.json?app=me.ouihq.erup"><img src="docs/badges/DownloadBadge_light.png" alt="Download on AltStore" width="245" height="78"></a>
 
@@ -15,27 +15,48 @@
 [Install](#install) · [Features](#features) · [Safety](#safety) · [Your data](#your-data) · [Build](#building-from-source) · [Contributing](#contributing)
 
 <p align="center">
-  <img src="docs/screenshots/banner.png" width="800" alt="Erup, the companion app for the Pure Flex scooter">
+  <img src="docs/screenshots/banner.png" width="820" alt="Erup, the companion app for the Pure Flex scooter">
 </p>
-<p align="center">
-  <img src="docs/screenshots/dashboard.png" width="250" alt="Live dashboard with speedometer, power, gear, light, cruise and lock">
-  &nbsp;
-  <img src="docs/screenshots/rides.png" width="250" alt="Ride history with weekly totals and statistics">
-  &nbsp;
-  <img src="docs/screenshots/map.png" width="250" alt="Ride route on a map, coloured by speed">
-</p>
-<p align="center">
-  <img src="docs/screenshots/ride-detail.png" width="250" alt="Ride detail tiles and a foldable power chart with regenerative braking">
-  &nbsp;
-  <img src="docs/screenshots/battery.png" width="250" alt="Battery page with distance per charge and the list of charges">
-  &nbsp;
-  <img src="docs/screenshots/health.png" width="250" alt="Efficiency per ride and battery health ring with internal resistance">
-</p>
-<p align="center">
-  <img src="docs/screenshots/alerts.png" width="250" alt="Configurable coloured alerts, including a custom motor temperature alert">
-  &nbsp;
-  <img src="docs/screenshots/backup.png" width="250" alt="Backup and restore with a backup file and an iCloud Drive folder">
-</p>
+
+<table align="center">
+  <tr>
+    <td align="center" width="33%"><img src="docs/screenshots/dashboard.png" width="240" alt="Live dashboard with speedometer, power, gear, light, cruise and lock"></td>
+    <td align="center" width="33%"><img src="docs/screenshots/rides.png" width="240" alt="Ride history with weekly totals and statistics"></td>
+    <td align="center" width="33%"><img src="docs/screenshots/map.png" width="240" alt="Ride route on a map, coloured by speed"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Live dashboard</b><br><sub>Speed, power, gear, light, cruise, lock</sub></td>
+    <td align="center"><b>Rides that log themselves</b><br><sub>Totals by week, month, year, all time</sub></td>
+    <td align="center"><b>Your route by speed</b><br><sub>The GPS track, slow to fast</sub></td>
+  </tr>
+</table>
+
+<details>
+<summary align="center"><b>Five more screens: ride detail, battery, health, alerts, backup</b></summary>
+<br>
+<table align="center">
+  <tr>
+    <td align="center" width="33%"><img src="docs/screenshots/ride-detail.png" width="240" alt="Ride detail tiles and a foldable power chart with regenerative braking"></td>
+    <td align="center" width="33%"><img src="docs/screenshots/battery.png" width="240" alt="Battery page with distance per charge and the list of charges"></td>
+    <td align="center" width="33%"><img src="docs/screenshots/health.png" width="240" alt="Efficiency per ride and battery health ring with internal resistance"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Ride detail</b><br><sub>Tiles and foldable charts, regen included</sub></td>
+    <td align="center"><b>Every charge</b><br><sub>Distance and energy from charge to charge</sub></td>
+    <td align="center"><b>Battery health</b><br><sub>Capacity and pack resistance over months</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/alerts.png" width="240" alt="Configurable coloured alerts, two levels per temperature"></td>
+    <td align="center"><img src="docs/screenshots/backup.png" width="240" alt="Backup and restore with a backup file and an iCloud Drive folder"></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Alerts you choose</b><br><sub>Yellow then red, per reading</sub></td>
+    <td align="center"><b>Backup and restore</b><br><sub>A file or an iCloud Drive folder</sub></td>
+    <td></td>
+  </tr>
+</table>
+</details>
 
 Live speed and battery at a glance, rides that log themselves, widgets, a Live Activity and Control Center toggles, all over a Bluetooth link that reconnects on its own. Quick to open, quiet in the background, and fully usable with larger text and VoiceOver.
 
@@ -90,9 +111,10 @@ Prefer to build it yourself? See [Building from source](#building-from-source).
 |---|---|
 | 🔌 **Always connected** | Keeps the app running while the scooter is connected, so the link survives a locked screen. Restores Bluetooth after iOS suspends or kills the app and reconnects whenever the scooter is in range, without opening Erup. |
 | 🏁 **Dashboard** | Speedometer, battery and range, gear picker, headlight, cruise and lock. Live speed, power and battery charts, regen, temperatures. |
-| 🗺️ **Rides** | Detected automatically. Distance, duration, average and top speed, energy, Wh/km, battery used, optional GPS route, charts. Statistics by week, month, year and all time. |
+| 🗺️ **Rides** | Detected automatically. Distance, duration, average and top speed, energy, Wh/km, battery used, optional GPS route, charts. Statistics by week, month, year and all time. Standing still for ten minutes ends a ride, so a stop at a shop stays one trip; both that time and the joining window go up to half an hour. |
 | 🔋 **Range and battery health** | Range from *your* consumption with a learned pack capacity. Pack resistance from voltage sag, plotted over months. |
 | 📱 **System integration** | Home and lock screen widgets, Live Activity and Dynamic Island, Control Center toggles, Siri and Shortcuts, notifications with an in-app notification center. |
+| 🔔 **Alerts you choose** | Two levels per reading: yellow in the app, red with a notification. Battery, controller and motor temperature, speed and current, with the level set by dragging, typing or tapping one of the usual values. |
 | 🔐 **Lock and PIN** | Locks through the same register as the official app. The PIN is kept in the Keychain on this device only, with Face ID before it is shown or changed. |
 | ♿ **Accessible** | Follows your text size, stacks layouts at the largest sizes, respects Reduce Motion, and describes its charts to VoiceOver. |
 
@@ -105,7 +127,7 @@ Prefer to build it yourself? See [Building from source](#building-from-source).
 | Live Activity | Compact: battery and speed · Minimal: battery ring · Expanded: speed, battery, range, gear, trip, light |
 | Control Center | Headlight and lock toggles |
 | Siri and Shortcuts | "Turn on the scooter light", "Lock the scooter", "Scooter battery", "Set the scooter to eco" |
-| Notifications | Low and critical battery, hot controller or motor, charge complete |
+| Notifications | Low and critical battery, a warm and a hot level for the controller and the motor, charge complete |
 
 Widgets and controls only read a snapshot in the shared App Group. They never touch Bluetooth.
 
@@ -164,7 +186,7 @@ swift test                                                                      
 xcodebuild -scheme Erup -destination 'platform=iOS Simulator,name=iPhone 17' test  # app
 ```
 
-About 100 tests: CRC and capture vectors, fragmented and corrupted streams, bridge and AT replies, the speed-cap rule, ride detection and range, lock and cruise confirmation, optimistic updates and rollback, alerts, statistics, compression and export.
+About 220 tests: CRC and capture vectors, fragmented and corrupted streams, bridge and AT replies, the speed-cap rule, ride detection and range, lock and cruise confirmation, optimistic updates and rollback, alerts, statistics, compression and export.
 
 ## 🔗 The AltStore source
 
@@ -241,7 +263,7 @@ source.json               AltStore source
 - "Out of range" versus "switched off" is inferred from the disconnect reason, so it's a hint.
 - iOS only starts a Live Activity from the foreground; a background connection shows it next time Erup opens.
 - A Control Center toggle may run in the widget extension; it then hands the command to the app and waits for confirmation.
-- Temperature thresholds and charge-complete detection are conservative estimates.
+- Alert levels and charge-complete detection are estimates for a stock Flex. Every level can be changed, switched off or added to in Settings → Alerts.
 - The regenerative-braking gauge is scaled to about a third of the Flex's peak motor power, which is an estimate.
 
 ## 🤝 Contributing
