@@ -121,10 +121,14 @@ public struct RideSummary: Equatable, Sendable {
     public var whPerKm: Double? { distanceKm >= 0.1 ? energyWh / distanceKm : nil }
 
     /// Rides that start within this long after the previous one ended count as one trip, for example a stop
-    /// at a shop or a traffic light that ended the first ride.
-    public static let mergeGap: TimeInterval = 5 * 60
+    /// at a shop or a ride the connection cut in two. The app passes the rider's own window instead.
+    public static let mergeGap: TimeInterval = 10 * 60
 
     /// True when this ride started shortly after `previous` ended. A `window` of zero turns joining off.
+    ///
+    /// The gap is measured from the end of `previous`, which for a ride that standing still ended is the moment
+    /// it stopped moving, not the moment the ride was closed. A window at or below the standing time therefore
+    /// never joins such a ride: the gap is always longer than the time it took to decide the ride was over.
     public func shouldMerge(after previous: RideSummary, within window: TimeInterval = RideSummary.mergeGap) -> Bool {
         let gap = startedAt.timeIntervalSince(previous.endedAt)
         return window > 0 && gap >= 0 && gap <= window

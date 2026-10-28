@@ -44,16 +44,24 @@ enum StallRecovery: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// How rides are cut. The defaults are what Erup always did.
+/// How rides are cut: how long standing still ends a ride, and how long a pause may be for the next ride to
+/// continue the last one.
+///
+/// Both numbers measure the same thing, the pause since the scooter stopped moving, so they only make sense
+/// together. A ride is closed once the pause reaches the standing time, which means a pause that ever ends a ride
+/// is at least that long; a join window at or below the standing time can therefore never reach such a ride.
+/// With both at the same value — how Erup comes — every pause longer than the standing time starts a new ride,
+/// and joining is left for the rides a dropped connection or a gap in the data cut in two, where the pause can be
+/// shorter. Set the window above the standing time to stitch longer stops back into one ride.
 enum RideSettings {
     static let joinWithinKey = "rides.joinWithinMinutes"
     static let endAfterStandingKey = "rides.endAfterStandingMinutes"
 
-    static let defaultJoinMinutes = 5
-    static let defaultStandingMinutes = 2
-    /// Minutes; 0 turns joining off.
-    static let joinOptions = [0, 2, 5, 10, 15]
-    static let standingOptions = [1, 2, 3, 5]
+    static let defaultJoinMinutes = 10
+    static let defaultStandingMinutes = 10
+    /// Minutes; 0 turns joining off. Both go up to half an hour, which is a long coffee and still one trip.
+    static let joinOptions = [0, 2, 5, 10, 15, 20, 30]
+    static let standingOptions = [1, 2, 3, 5, 10, 15, 20, 30]
 
     /// A ride that starts within this long after the previous one ended continues it. Zero: never.
     nonisolated static var joinWithin: TimeInterval {
@@ -63,6 +71,24 @@ enum RideSettings {
     /// How long standing still ends a ride.
     nonisolated static var endAfterStanding: TimeInterval {
         minutes(forKey: endAfterStandingKey, default: defaultStandingMinutes, allowed: standingOptions) * 60
+    }
+
+    /// Whether the join window reaches a ride that standing still ended, which needs a window longer than the
+    /// standing time. False with the two set equally, and with joining off.
+    nonisolated static var joiningReachesStandstillSplits: Bool {
+        joinWithin > 0 && joinWithin > endAfterStanding
+    }
+
+    /// What the two settings mean together, for the settings screen and the diagnostic report.
+    static func pauseSummary(joinMinutes: Int, standingMinutes: Int) -> String {
+        let standing = "\(standingMinutes) min"
+        guard joinMinutes > 0 else {
+            return "Standing still for \(standing) ends a ride, and every ride stands on its own."
+        }
+        guard joinMinutes > standingMinutes else {
+            return "Standing still for \(standing) ends a ride, and a longer pause always starts a new one. Joining is left for a ride that a dropped connection cut in two, which it repairs within \(joinMinutes) min."
+        }
+        return "Standing still for \(standing) ends a ride, and riding again within \(joinMinutes) min of the stop continues it. A longer pause starts a new ride."
     }
 
     nonisolated static var detectorConfiguration: RideDetector.Configuration {

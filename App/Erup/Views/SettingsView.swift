@@ -60,15 +60,15 @@ struct SettingsView: View {
                 Toggle(isOn: $recordsGPS) {
                     SettingsLabel(title: "Record routes", symbol: "location.fill")
                 }
-                Picker(selection: $joinMinutes) {
-                    ForEach(RideSettings.joinOptions, id: \.self) { Text($0 == 0 ? "Off" : "\($0) min").tag($0) }
-                } label: {
-                    SettingsLabel(title: "Join rides within", symbol: "arrow.triangle.merge", tint: .gray)
-                }
                 Picker(selection: $standingMinutes) {
                     ForEach(RideSettings.standingOptions, id: \.self) { Text("\($0) min").tag($0) }
                 } label: {
                     SettingsLabel(title: "End after standing still", symbol: "figure.stand", tint: .gray)
+                }
+                Picker(selection: $joinMinutes) {
+                    ForEach(RideSettings.joinOptions, id: \.self) { Text($0 == 0 ? "Off" : "\($0) min").tag($0) }
+                } label: {
+                    SettingsLabel(title: "Join rides within", symbol: "arrow.triangle.merge", tint: .gray)
                 }
                 NavigationLink {
                     RideDetailSettingsView()
@@ -83,7 +83,11 @@ struct SettingsView: View {
             } header: {
                 Text("Rides")
             } footer: {
-                Text("Rides are detected automatically. With routes on, the GPS track is recorded while you ride, including in the background. A ride that starts within the joining time after the last one ended continues it, for example after a short stop; standing still for the chosen time ends a ride. Both apply from the next reading.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Rides are detected automatically. With routes on, the GPS track is recorded while you ride, including in the background.")
+                    Text(RideSettings.pauseSummary(joinMinutes: joinMinutes, standingMinutes: standingMinutes))
+                    Text("Both apply from the next reading.")
+                }
             }
 
             Section {

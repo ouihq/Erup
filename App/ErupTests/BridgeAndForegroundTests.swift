@@ -304,14 +304,15 @@ final class StallRecoveryTests: XCTestCase {
 }
 
 final class RideSettingsTests: XCTestCase {
-    func testTheDefaultsAreWhatErupAlwaysDid() {
+    func testBothSettingsComeAtTenMinutes() {
         withStored(RideSettings.joinWithinKey) {
             withStored(RideSettings.endAfterStandingKey) {
                 UserDefaults.standard.removeObject(forKey: RideSettings.joinWithinKey)
                 UserDefaults.standard.removeObject(forKey: RideSettings.endAfterStandingKey)
-                XCTAssertEqual(RideSettings.joinWithin, 300)
-                XCTAssertEqual(RideSettings.endAfterStanding, 120)
-                XCTAssertEqual(RideSettings.detectorConfiguration.stationaryTimeout, 120)
+                XCTAssertEqual(RideSettings.joinWithin, 600)
+                XCTAssertEqual(RideSettings.endAfterStanding, 600)
+                XCTAssertEqual(RideSettings.detectorConfiguration.stationaryTimeout, 600)
+                XCTAssertFalse(RideSettings.joiningReachesStandstillSplits, "equal values: standing still always cuts")
             }
         }
     }
@@ -339,14 +340,47 @@ final class RideSettingsTests: XCTestCase {
             withStored(RideSettings.endAfterStandingKey) {
                 UserDefaults.standard.set(999, forKey: RideSettings.joinWithinKey)
                 UserDefaults.standard.set(-4, forKey: RideSettings.endAfterStandingKey)
-                XCTAssertEqual(RideSettings.joinWithin, 300)
-                XCTAssertEqual(RideSettings.endAfterStanding, 120)
+                XCTAssertEqual(RideSettings.joinWithin, 600)
+                XCTAssertEqual(RideSettings.endAfterStanding, 600)
             }
         }
     }
 
-    func testEveryChoiceIsAnAllowedValue() {
+    func testEveryChoiceIsAnAllowedValueAndBothReachHalfAnHour() {
         XCTAssertTrue(RideSettings.joinOptions.contains(RideSettings.defaultJoinMinutes))
         XCTAssertTrue(RideSettings.standingOptions.contains(RideSettings.defaultStandingMinutes))
+        XCTAssertEqual(RideSettings.joinOptions.max(), 30)
+        XCTAssertEqual(RideSettings.standingOptions.max(), 30)
+        XCTAssertEqual(RideSettings.joinOptions, RideSettings.joinOptions.sorted())
+        XCTAssertEqual(RideSettings.standingOptions, RideSettings.standingOptions.sorted())
+    }
+
+    func testAWindowLongerThanTheStandingTimeIsTheOneThatStitchesAStopBackTogether() {
+        withStored(RideSettings.joinWithinKey) {
+            withStored(RideSettings.endAfterStandingKey) {
+                UserDefaults.standard.set(5, forKey: RideSettings.endAfterStandingKey)
+                UserDefaults.standard.set(15, forKey: RideSettings.joinWithinKey)
+                XCTAssertTrue(RideSettings.joiningReachesStandstillSplits)
+                UserDefaults.standard.set(5, forKey: RideSettings.joinWithinKey)
+                XCTAssertFalse(RideSettings.joiningReachesStandstillSplits, "the pause is always longer than the standing time")
+                UserDefaults.standard.set(2, forKey: RideSettings.joinWithinKey)
+                XCTAssertFalse(RideSettings.joiningReachesStandstillSplits)
+                UserDefaults.standard.set(0, forKey: RideSettings.joinWithinKey)
+                XCTAssertFalse(RideSettings.joiningReachesStandstillSplits, "joining off")
+            }
+        }
+    }
+
+    func testTheSettingsScreenExplainsWhatThePairDoes() {
+        XCTAssertEqual(
+            RideSettings.pauseSummary(joinMinutes: 0, standingMinutes: 10),
+            "Standing still for 10 min ends a ride, and every ride stands on its own."
+        )
+        XCTAssertTrue(
+            RideSettings.pauseSummary(joinMinutes: 10, standingMinutes: 10).contains("a longer pause always starts a new one"),
+            "equal values are explained, not left as a surprise"
+        )
+        XCTAssertTrue(RideSettings.pauseSummary(joinMinutes: 5, standingMinutes: 10).contains("always starts a new one"))
+        XCTAssertTrue(RideSettings.pauseSummary(joinMinutes: 20, standingMinutes: 10).contains("within 20 min of the stop continues it"))
     }
 }

@@ -124,6 +124,20 @@ import SwiftData
 final class RideRecorderPersistenceTests: XCTestCase {
     private let origin = Date(timeIntervalSinceReferenceDate: 5_000_000)
 
+    /// These tests stand still for a couple of minutes, so they pin the cutting settings rather than follow
+    /// whatever the app comes with.
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.set(2, forKey: RideSettings.endAfterStandingKey)
+        UserDefaults.standard.set(5, forKey: RideSettings.joinWithinKey)
+    }
+
+    override func tearDown() {
+        UserDefaults.standard.removeObject(forKey: RideSettings.endAfterStandingKey)
+        UserDefaults.standard.removeObject(forKey: RideSettings.joinWithinKey)
+        super.tearDown()
+    }
+
     private func makeRecorder() throws -> (RideRecorder, ModelContainer) {
         let container = try ModelContainer(
             for: Ride.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true)

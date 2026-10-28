@@ -502,9 +502,38 @@ final class RideCuttingSettingsTests: XCTestCase {
     func testTheJoiningWindowIsConfigurable() {
         let first = summary(start: 0)
         let afterEightMinutes = summary(start: 600 + 8 * 60)
-        XCTAssertFalse(afterEightMinutes.shouldMerge(after: first), "the default window is 5 minutes")
+        XCTAssertTrue(afterEightMinutes.shouldMerge(after: first), "the default window is 10 minutes")
         XCTAssertTrue(afterEightMinutes.shouldMerge(after: first, within: 10 * 60))
         XCTAssertFalse(afterEightMinutes.shouldMerge(after: first, within: 2 * 60))
+        XCTAssertFalse(summary(start: 600 + 11 * 60).shouldMerge(after: first))
+    }
+
+    func testAWindowAsLongAsTheStandingTimeNeverReachesAStandingStillSplit() {
+        func sample(_ t: TimeInterval, speed: Double) -> TelemetrySample {
+            TelemetrySample(date: origin.addingTimeInterval(t), speedKmh: speed, voltage: 40, current: speed > 0 ? 5 : 0,
+                            batteryPercent: 80, controllerTemperature: 30, motorTemperature: 35)
+        }
+        // Ride, stand still until the ride is cut, then ride again at once: the two settings at the same value.
+        let standing: TimeInterval = 120
+        var configuration = RideDetector.Configuration()
+        configuration.stationaryTimeout = standing
+        var detector = RideDetector(configuration: configuration)
+        var first: RideSummary?
+        var second: RideSummary?
+        for t in 0..<60 {
+            for event in detector.ingest(sample(Double(t), speed: 20)) { if case .ended(let ride) = event { first = ride } }
+        }
+        for t in 60...(60 + Int(standing)) {
+            for event in detector.ingest(sample(Double(t), speed: 0)) { if case .ended(let ride) = event { first = ride } }
+        }
+        for t in (61 + Int(standing))..<(121 + Int(standing)) {
+            for event in detector.ingest(sample(Double(t), speed: 20)) { if case .ended(let ride) = event { second = ride } }
+        }
+        for event in detector.finish() { if case .ended(let ride) = event { second = ride } }
+        guard let first, let second else { return XCTFail("the standing time cut the ride in two") }
+        XCTAssertEqual(first.endedAt.timeIntervalSince(origin), 60, accuracy: 1, "the ride ends where the scooter stopped")
+        XCTAssertFalse(second.shouldMerge(after: first, within: standing), "the pause is longer than the standing time by the time the ride is cut")
+        XCTAssertTrue(second.shouldMerge(after: first, within: standing + 60), "a longer window stitches the stop back together")
     }
 
     func testAWindowOfZeroTurnsJoiningOff() {
