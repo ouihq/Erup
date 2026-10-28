@@ -45,12 +45,20 @@ final class AlertEngineTests: XCTestCase {
 
     func testTemperatureAlertsRearmBelowHysteresis() {
         var engine = AlertEngine()
-        XCTAssertEqual(names(engine.evaluate(reading(controller: 71), rules: rules)), ["Controller hot"])
+        XCTAssertEqual(names(engine.evaluate(reading(controller: 71), rules: rules)), ["Controller warm"])
         XCTAssertEqual(names(engine.evaluate(reading(controller: 72), rules: rules)), [])
         XCTAssertEqual(names(engine.evaluate(reading(controller: 65), rules: rules)), [])
         _ = engine.evaluate(reading(controller: 55), rules: rules)
-        XCTAssertEqual(names(engine.evaluate(reading(controller: 71), rules: rules)), ["Controller hot"])
-        XCTAssertEqual(names(engine.evaluate(reading(motor: 95), rules: rules)), ["Motor hot"])
+        XCTAssertEqual(names(engine.evaluate(reading(controller: 71), rules: rules)), ["Controller warm"])
+        XCTAssertEqual(names(engine.evaluate(reading(motor: 82), rules: rules)), ["Motor warm"])
+    }
+
+    func testTheYellowLevelComesFirstAndTheRedOneTakesOverAsItKeepsHeatingUp() {
+        var engine = AlertEngine()
+        XCTAssertEqual(names(engine.evaluate(reading(controller: 72), rules: rules)), ["Controller warm"])
+        XCTAssertEqual(names(engine.evaluate(reading(controller: 86), rules: rules)), ["Controller hot"])
+        XCTAssertEqual(names(engine.evaluate(reading(motor: 82), rules: rules)), ["Motor warm"])
+        XCTAssertEqual(names(engine.evaluate(reading(motor: 101), rules: rules)), ["Motor hot"])
     }
 
     func testACustomRuleFiresAboveItsThresholdAndCarriesItsValue() {
@@ -67,8 +75,8 @@ final class AlertEngineTests: XCTestCase {
 
     func testTwoRulesOnTheSameReadingGiveTheMoreSeriousOne() {
         var engine = AlertEngine()
-        let warm = AlertRule(name: "Motor warm", metric: .motorTemperature, direction: .above, threshold: 60, severity: .warning)
-        XCTAssertEqual(names(engine.evaluate(reading(motor: 95), rules: rules + [warm])), ["Motor hot"])
+        let warm = AlertRule(name: "Motor warm of my own", metric: .motorTemperature, direction: .above, threshold: 60, severity: .warning)
+        XCTAssertEqual(names(engine.evaluate(reading(motor: 105), rules: rules + [warm])), ["Motor hot"])
     }
 
     func testSpeedAndCurrentRules() {
@@ -219,12 +227,35 @@ final class AlertRuleTests: XCTestCase {
         XCTAssertEqual(center.severity(for: .battery, value: 20), .warning)
         XCTAssertEqual(center.severity(for: .battery, value: 10), .critical)
         XCTAssertNil(center.severity(for: .motorTemperature, value: 50))
-        XCTAssertEqual(center.severity(for: .motorTemperature, value: 95), .critical)
+        XCTAssertEqual(center.severity(for: .motorTemperature, value: 85), .warning)
+        XCTAssertEqual(center.severity(for: .motorTemperature, value: 105), .critical)
     }
 
     func testRulesAreReadableAsText() {
         XCTAssertEqual(AlertRule.defaults[0].summary, "Battery at or below 20%")
-        XCTAssertEqual(AlertRule.defaults[3].summary, "Motor temperature at or above 90 °C")
+        XCTAssertEqual(AlertRule.defaults.last?.summary, "Motor temperature at or above 100 °C")
+    }
+
+    func testEachTemperatureHasAYellowLevelBelowItsRedOne() {
+        for metric in [AlertMetric.controllerTemperature, .motorTemperature] {
+            let levels = AlertRule.defaults.filter { $0.metric == metric }
+            XCTAssertEqual(levels.map(\.severity), [.warning, .critical], metric.title)
+            XCTAssertLessThan(levels[0].threshold, levels[1].threshold, metric.title)
+            XCTAssertFalse(levels[0].notifies, "the yellow level stays in the app")
+            XCTAssertTrue(levels[1].notifies, "the red one notifies")
+        }
+    }
+
+    func testWhatTheEditorOffersCoversEveryStandardAlert() {
+        for metric in AlertMetric.allCases {
+            XCTAssertTrue(metric.range.contains(metric.defaultThreshold), metric.title)
+            XCTAssertFalse(metric.presets.isEmpty, metric.title)
+            XCTAssertTrue(metric.presets.allSatisfy(metric.range.contains), metric.title)
+            XCTAssertEqual(metric.presets, metric.presets.sorted(), metric.title)
+        }
+        for rule in AlertRule.defaults {
+            XCTAssertTrue(rule.metric.range.contains(rule.threshold), rule.name)
+        }
     }
 }
 

@@ -18,7 +18,7 @@ struct AlertSettingsView: View {
                     for index in offsets { center.delete(center.rules[index]) }
                 }
                 Button {
-                    editing = AlertRule(name: "", metric: .motorTemperature, direction: .above, threshold: AlertMetric.motorTemperature.defaultThreshold)
+                    editing = AlertRule(name: "", metric: .speed, direction: .above, threshold: AlertMetric.speed.defaultThreshold)
                 } label: {
                     Label("Add an alert…", systemImage: "plus.circle.fill")
                 }
@@ -39,7 +39,7 @@ struct AlertSettingsView: View {
             Section {
                 Button("Restore the standard alerts…", role: .destructive) { confirmsReset = true }
             } footer: {
-                Text("Puts battery low at 20% (yellow) and critical at 10% (red), and the two temperature alerts, back as they came. Alerts you added are removed.")
+                Text("Puts the standard six back as they came: battery low at 20% (yellow) and critical at 10% (red), the controller warm at 70 °C and hot at 85 °C, the motor warm at 80 °C and hot at 100 °C. Alerts you added are removed.")
             }
         }
         .navigationTitle("Alerts")
@@ -114,9 +114,14 @@ struct AlertRuleEditor: View {
                         }
                         .pickerStyle(.segmented)
                     }
-                    Stepper(value: threshold, in: displayRange, step: rule.metric.step) {
-                        LabeledContent(rule.direction == .above ? "At or above" : "At or below", value: thresholdText)
-                    }
+                    ValueChooser(
+                        title: rule.direction == .above ? "At or above" : "At or below",
+                        unit: displayUnit,
+                        value: threshold,
+                        range: displayRange,
+                        step: rule.metric.step,
+                        presets: displayPresets
+                    )
                 } header: {
                     Text("Condition")
                 } footer: {
@@ -170,7 +175,17 @@ struct AlertRuleEditor: View {
 
     /// Speed is kept in km/h and shown in the rider's unit; everything else is shown as it is stored.
     private var displayRange: ClosedRange<Double> {
-        rule.metric == .speed ? units.speed(fromKmh: rule.metric.range.lowerBound)...units.speed(fromKmh: rule.metric.range.upperBound) : rule.metric.range
+        guard rule.metric == .speed else { return rule.metric.range }
+        return units.speed(fromKmh: rule.metric.range.lowerBound).rounded(.up)...units.speed(fromKmh: rule.metric.range.upperBound).rounded(.down)
+    }
+
+    private var displayPresets: [Double] {
+        guard rule.metric == .speed else { return rule.metric.presets }
+        return rule.metric.presets.map { units.speed(fromKmh: $0).rounded() }
+    }
+
+    private var displayUnit: String {
+        rule.metric == .speed ? units.speedLabel : rule.metric.unit
     }
 
     private var threshold: Binding<Double> {
@@ -178,15 +193,6 @@ struct AlertRuleEditor: View {
             get: { rule.metric == .speed ? units.speed(fromKmh: rule.threshold).rounded() : rule.threshold },
             set: { rule.threshold = rule.metric == .speed ? ($0 / units.speed(fromKmh: 1)) : $0 }
         )
-    }
-
-    private var thresholdText: String {
-        let value = threshold.wrappedValue.formatted(.number.precision(.fractionLength(0)))
-        switch rule.metric {
-        case .battery: return "\(value)%"
-        case .speed: return "\(value) \(units.speedLabel)"
-        default: return "\(value) \(rule.metric.unit)"
-        }
     }
 }
 

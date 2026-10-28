@@ -38,30 +38,41 @@ enum AlertMetric: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// What can be chosen for a threshold: wide enough for a stock Flex and no wider. It runs out below 5%, its
+    /// sport gear accelerates to about 25 km/h, and a hard pull draws in the order of 15 A.
     var range: ClosedRange<Double> {
         switch self {
-        case .battery: 1...99
-        case .motorTemperature, .controllerTemperature: 30...120
-        case .speed: 5...60
-        case .current: 1...30
+        case .battery: 5...95
+        case .motorTemperature: 40...130
+        case .controllerTemperature: 40...120
+        case .speed: 10...50
+        case .current: 2...30
         }
     }
 
-    var step: Double {
+    /// Every reading is whole numbers, so one unit.
+    var step: Double { 1 }
+
+    /// The levels worth watching on a Pure Flex, offered as one tap in the editor.
+    var presets: [Double] {
         switch self {
-        case .battery, .motorTemperature, .controllerTemperature: 1
-        case .speed: 1
-        case .current: 1
+        case .battery: [10, 15, 20, 25, 30, 50]
+        case .motorTemperature: [60, 70, 80, 90, 100]
+        case .controllerTemperature: [55, 65, 70, 80, 90]
+        case .speed: [20, 25, 30, 35, 40]
+        case .current: [8, 10, 12, 15, 20, 25]
         }
     }
 
+    /// Where a new alert on this reading starts: warm but still fine for the temperatures, faster than the sport
+    /// gear accelerates for speed, and a hard pull for current.
     var defaultThreshold: Double {
         switch self {
         case .battery: 20
         case .motorTemperature: 80
-        case .controllerTemperature: 65
-        case .speed: 25
-        case .current: 15
+        case .controllerTemperature: 70
+        case .speed: 30
+        case .current: 18
         }
     }
 
@@ -178,13 +189,19 @@ struct AlertRule: Codable, Identifiable, Equatable, Sendable {
     static let batteryCriticalID = UUID(uuidString: "00000000-0000-4000-8000-00000000A002")!
     static let controllerHotID = UUID(uuidString: "00000000-0000-4000-8000-00000000A003")!
     static let motorHotID = UUID(uuidString: "00000000-0000-4000-8000-00000000A004")!
+    static let controllerWarmID = UUID(uuidString: "00000000-0000-4000-8000-00000000A005")!
+    static let motorWarmID = UUID(uuidString: "00000000-0000-4000-8000-00000000A006")!
 
-    /// Battery below 20 is yellow, below 10 is red; the temperatures are red.
+    /// Each reading gets two levels, as a rider wants to know about heat before it matters: the yellow one is a
+    /// heads-up in the app only, the red one notifies. The temperatures are where a hub motor and a controller of
+    /// this size are warm from a long climb (yellow) and where they are hot enough to pull back power (red).
     static let defaults: [AlertRule] = [
         AlertRule(id: batteryLowID, name: "Battery low", metric: .battery, direction: .below, threshold: 20, severity: .warning, isBuiltIn: true),
         AlertRule(id: batteryCriticalID, name: "Battery critical", metric: .battery, direction: .below, threshold: 10, severity: .critical, isBuiltIn: true),
-        AlertRule(id: controllerHotID, name: "Controller hot", metric: .controllerTemperature, direction: .above, threshold: 70, severity: .critical, isBuiltIn: true),
-        AlertRule(id: motorHotID, name: "Motor hot", metric: .motorTemperature, direction: .above, threshold: 90, severity: .critical, isBuiltIn: true),
+        AlertRule(id: controllerWarmID, name: "Controller warm", metric: .controllerTemperature, direction: .above, threshold: 70, severity: .warning, notifies: false, isBuiltIn: true),
+        AlertRule(id: controllerHotID, name: "Controller hot", metric: .controllerTemperature, direction: .above, threshold: 85, severity: .critical, isBuiltIn: true),
+        AlertRule(id: motorWarmID, name: "Motor warm", metric: .motorTemperature, direction: .above, threshold: 80, severity: .warning, notifies: false, isBuiltIn: true),
+        AlertRule(id: motorHotID, name: "Motor hot", metric: .motorTemperature, direction: .above, threshold: 100, severity: .critical, isBuiltIn: true),
     ]
 }
 
@@ -205,7 +222,8 @@ enum AlertRuleStorage {
         defaults.set(json, forKey: key)
     }
 
-    /// The four built-in rules, with the levels the rider chose before alerts were rules (0 meant off).
+    /// The built-in rules, with the levels the rider chose before alerts were rules (0 meant off). Those levels
+    /// were a single red one per temperature, so they land on the red rule and the yellow one stays as it comes.
     static func migrated(from defaults: UserDefaults) -> [AlertRule] {
         let legacy: [(UUID, String)] = [
             (AlertRule.batteryLowID, "alerts.batteryLow"), (AlertRule.batteryCriticalID, "alerts.batteryCritical"),
