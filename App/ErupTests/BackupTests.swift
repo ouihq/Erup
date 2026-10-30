@@ -151,6 +151,38 @@ final class BackupTests: XCTestCase {
         XCTAssertEqual(summary.lastRide, origin.addingTimeInterval(3600 + 600))
     }
 
+    /// After a reinstall the rider picks the old folder to restore from. Backing up the empty phone must not push the real backup out.
+    func testAnEmptyPhoneNeverReplacesTheBackupInTheFolder() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("erup-scheduler-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let defaults = defaults()
+        try BackupFolder.remember(directory, defaults: defaults)
+        func onDisk(_ name: String) throws -> ModelContainer {
+            try ModelContainer(for: Ride.self, configurations: ModelConfiguration(url: directory.appendingPathComponent("\(name).store")))
+        }
+
+        let old = try onDisk("old")
+        try fill(old, starts: [0, 3600])
+        try await BackupScheduler(container: old, defaults: defaults).backUpNow()
+
+        let fresh = try onDisk("fresh")
+        do {
+            try await BackupScheduler(container: fresh, defaults: defaults).backUpNow()
+            XCTFail("an empty phone must not write a backup")
+        } catch {
+            XCTAssertEqual(error as? BackupError, .keptExisting)
+        }
+        do {
+            try await BackupScheduler(container: try container(), defaults: defaults).backUpNow()
+            XCTFail("a temporary store must not write a backup")
+        } catch {
+            XCTAssertEqual(error as? BackupError, .keptExisting)
+        }
+        let kept = try await BackupService.decode(try BackupFolder.latest(in: directory).data)
+        XCTAssertEqual(kept.rides.count, 2)
+    }
+
     func testAnEmptyBackupRoundTrips() async throws {
         let archive = try await BackupService.decode(try await backup(of: try container(), defaults: defaults()))
         XCTAssertTrue(archive.rides.isEmpty)
