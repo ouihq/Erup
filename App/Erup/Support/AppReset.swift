@@ -7,10 +7,10 @@ enum AppReset {
     static func perform(store: ScooterStore, context: ModelContext) async throws {
         for ride in try context.fetch(FetchDescriptor<Ride>()) { context.delete(ride) }
         try context.save()
+        store.invalidateRideContext()
 
         await store.forgetScooter()
         store.clearNotices()
-        store.invalidateRideContext()
 
         PINVault.pin = nil
         SnapshotStore.remove()

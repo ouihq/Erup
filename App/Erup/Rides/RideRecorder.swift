@@ -207,6 +207,8 @@ final class RideRecorder {
     }
 
     func refreshRideContext() {
+        // A restore that replaced the rides, or a reset, deleted the row the ride in progress was writing into.
+        if let live, live.ride.isDeleted || live.ride.modelContext == nil { self.live = nil }
         var descriptor = FetchDescriptor<Ride>(sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
         descriptor.fetchLimit = Self.historyLimit
         do {
