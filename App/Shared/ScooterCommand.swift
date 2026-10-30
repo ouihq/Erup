@@ -30,7 +30,24 @@ enum CommandQueueFile {
     }
 
     static func enqueue(_ command: ScooterCommand) throws {
-        try write(try read() + [QueuedCommand(id: UUID(), command: command, date: Date())])
+        try update { $0 + [QueuedCommand(id: UUID(), command: command, date: Date())] }
+    }
+
+    /// Removes the commands the app has taken, keeping any the widget added meanwhile.
+    static func remove(_ taken: [QueuedCommand]) throws {
+        let ids = Set(taken.map(\.id))
+        try update { $0.filter { !ids.contains($0.id) } }
+    }
+
+    /// The widget extension and the app both change the file, so each read-change-write is coordinated across processes.
+    private static func update(_ change: ([QueuedCommand]) -> [QueuedCommand]) throws {
+        guard let url else { throw SnapshotStore.StoreError.appGroupUnavailable }
+        var coordinationError: NSError?
+        var thrown: Error?
+        NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordinationError) { _ in
+            do { try write(change(try read())) } catch { thrown = error }
+        }
+        if let error = thrown ?? coordinationError { throw error }
     }
 }
 

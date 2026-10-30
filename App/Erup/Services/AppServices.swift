@@ -105,7 +105,7 @@ final class AppServices {
         do {
             let queued = try CommandQueueFile.read()
             guard !queued.isEmpty else { return }
-            try CommandQueueFile.write([])
+            try CommandQueueFile.remove(queued)
             for item in queued where Date().timeIntervalSince(item.date) < 30 {
                 do {
                     try await store.execute(item.command)
