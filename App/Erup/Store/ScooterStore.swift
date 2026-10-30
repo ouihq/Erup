@@ -383,11 +383,7 @@ final class ScooterStore {
         if case .lockFlag(let on) = change { return try submitLock(on, change: change, speedKmh: speedKmh) }
         var register = overlaid(telemetry1.register0)
         for pending in pendingChanges.values { register = register.applying(pending) }
-        let context = ControlContext(
-            register0: register,
-            telemetry2: telemetry2,
-            speedKmh: telemetry1.speedKmh(scaled: telemetry2.speedScalingFlag)
-        )
+        let context = ControlContext(register0: register, telemetry2: telemetry2, speedKmh: speedKmh)
         let frame = try ControlFrame.make(change, context: context)
 
         let kind = change.kind
@@ -398,16 +394,6 @@ final class ScooterStore {
 
         Task {
             do {
-                if case .lockFlag = change {
-                    // The original app sends the PIN right before every lock write. A wrong PIN makes the
-                    // scooter drop the connection, so only send one the user has entered.
-                    if let pin = PINVault.pin {
-                        let reply = try await self.perform(.verifyPIN(pin))
-                        guard reply.value == "Y" else {
-                            throw LinkFailure.commandRejected("The scooter rejected the PIN. Check \"PIN used for lock\" in Settings.")
-                        }
-                    }
-                }
                 try await self.link.write(frame)
             } catch {
                 self.rollback(kind, token: token, message: error.localizedDescription)
