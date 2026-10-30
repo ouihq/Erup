@@ -16,3 +16,6 @@ xcuserdata/
 # Scooter diagnostics script output and its virtualenv
 diagnostics-*/
 .venv/
+
+# Local code index
+.codegraph/
