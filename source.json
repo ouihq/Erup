@@ -29,12 +29,22 @@
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/alerts.png",
         "https://raw.githubusercontent.com/ouihq/Erup/main/docs/screenshots/backup.png"
       ],
-      "version": "1.7.0",
-      "versionDate": "2026-10-28",
-      "versionDescription": "chore(release): bump version to 1.7.0\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>",
-      "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.7.0/Erup.ipa",
-      "size": 1911946,
+      "version": "1.7.1",
+      "versionDate": "2026-10-30",
+      "versionDescription": "chore(release): bump version to 1.7.1",
+      "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.7.1/Erup.ipa",
+      "size": 1915636,
       "versions": [
+        {
+          "version": "1.7.1",
+          "buildVersion": "20261030.1",
+          "date": "2026-10-30",
+          "localizedDescription": "chore(release): bump version to 1.7.1",
+          "downloadURL": "https://github.com/ouihq/Erup/releases/download/v1.7.1/Erup.ipa",
+          "size": 1915636,
+          "sha256": "5b924d8ae02406f9d5db94d5890849636be7e3698ca641b23c4b9f389e14dfaa",
+          "minOSVersion": "18.0"
+        },
         {
           "version": "1.7.0",
           "buildVersion": "20261028.2",
