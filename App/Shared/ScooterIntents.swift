@@ -33,6 +33,8 @@ struct SetHeadlightIntent: SetValueIntent {
 
 struct SetLockIntent: SetValueIntent {
     static let title: LocalizedStringResource = "Set scooter lock"
+    /// Control Center works on a locked iPhone, so unlocking needs the owner, like the button in the app.
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @Parameter(title: "Locked")
     var value: Bool
