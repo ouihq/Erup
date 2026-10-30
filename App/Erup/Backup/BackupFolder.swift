@@ -59,9 +59,7 @@ enum BackupFolder {
     static func latest(in folder: URL) throws -> (data: Data, date: Date) {
         try withAccess(to: folder) {
             let fileManager = FileManager.default
-            let keys: [URLResourceKey] = [.contentModificationDateKey, .ubiquitousItemDownloadingStatusKey]
-            let files = (try? fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys)) ?? []
-            let backups = files.filter { $0.pathExtension == fileExtension || $0.lastPathComponent.hasSuffix(".\(fileExtension).icloud") }
+            let backups = backupFiles(in: folder)
             let newest = backups.max { modified($0) < modified($1) }
             let preferred = backups.first { $0.lastPathComponent == latestName }
             guard let file = preferred ?? newest else { throw BackupError.nothingInFolder }
@@ -72,6 +70,17 @@ enum BackupFolder {
             }
             return (try coordinatedRead(at: file), modified(file))
         }
+    }
+
+    /// Whether the folder already holds a backup, downloaded or not.
+    static func containsBackup(in folder: URL) -> Bool {
+        (try? withAccess(to: folder) { !backupFiles(in: folder).isEmpty }) ?? false
+    }
+
+    private static func backupFiles(in folder: URL) -> [URL] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .ubiquitousItemDownloadingStatusKey]
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys)) ?? []
+        return files.filter { $0.pathExtension == fileExtension || $0.lastPathComponent.hasSuffix(".\(fileExtension).icloud") }
     }
 
     private static func modified(_ url: URL) -> Date {

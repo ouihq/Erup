@@ -19,12 +19,15 @@ final class BackupScheduler {
     @ObservationIgnored private let container: ModelContainer
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var pending: Task<Void, Never>?
+    /// The in-memory store the app falls back to when the database can't be opened. It must never replace a real backup.
+    @ObservationIgnored private let isTemporaryStore: Bool
     private(set) var isRunning = false
     @ObservationIgnored var onError: ((String) -> Void)?
 
     init(container: ModelContainer, defaults: UserDefaults = .standard) {
         self.container = container
         self.defaults = defaults
+        isTemporaryStore = container.configurations.contains (where: \.isStoredInMemoryOnly)
     }
 
     nonisolated static func isDue(last: Date?, now: Date, interval: TimeInterval = BackupScheduler.interval) -> Bool {
@@ -56,7 +59,12 @@ final class BackupScheduler {
     }
 
     private func runQuietly() async {
-        do { try await backUpNow() } catch { onError?("The automatic backup failed: \(error.localizedDescription)") }
+        do {
+            try await backUpNow()
+        } catch BackupError.keptExisting {
+            // Settings shows why; repeating it on every launch until the first ride would only be noise.
+        } catch {
+            onError?("The automatic backup failed: \(error.localizedDescription)") }
     }
 
     /// Writes a backup into the chosen folder. Throws when no folder is chosen or it can't be written.
@@ -66,6 +74,12 @@ final class BackupScheduler {
         isRunning = true
         defer { isRunning = false }
         do {
+            // An empty or temporary ride store would push the real backup out of the folder, for example right after
+            // a reinstall, when the rider picks the old folder to restore from.
+            if try isTemporaryStore || container.mainContext.fetchCount(FetchDescriptor<Ride>()) == 0,
+               BackupFolder.containsBackup(in: folder) {
+                throw BackupError.keptExisting
+            }
             let data = try await Self.makeData(container: container, defaults: defaults)
             try await Task.detached(priority: .utility) { try BackupFolder.write(data, to: folder) }.value
             defaults.set(Date.now.timeIntervalSince1970, forKey: Self.lastDateKey)

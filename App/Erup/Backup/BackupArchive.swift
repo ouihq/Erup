@@ -101,6 +101,7 @@ enum BackupError: LocalizedError, Equatable {
     case folderUnavailable
     case nothingInFolder
     case notDownloaded
+    case keptExisting
 
     var errorDescription: String? {
         switch self {
@@ -110,6 +111,7 @@ enum BackupError: LocalizedError, Equatable {
         case .folderUnavailable: "The backup folder can't be reached. Choose it again."
         case .nothingInFolder: "There is no backup in the folder yet."
         case .notDownloaded: "The backup is still downloading from iCloud. Try again in a moment."
+        case .keptExisting: "Erup has no rides to back up yet, so it kept the backup that is already in the folder."
         }
     }
 }
